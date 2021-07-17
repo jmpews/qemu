@@ -8486,7 +8486,7 @@ void define_one_arm_cp_reg_with_opaque(ARMCPU *cpu,
         case 4:
         case 5:
             /* min_EL EL2 */
-            mask = PL2_RW;
+            mask = PL1_RW;
             break;
         case 6:
             /* min_EL EL3 */
