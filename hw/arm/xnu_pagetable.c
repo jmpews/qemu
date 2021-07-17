@@ -44,7 +44,6 @@
 #include "exec/exec-all.h"
 #include "exec/cpu_ldst.h"
 #include "arm_ldst.h"
-#include "hw/semihosting/semihost.h"
 
 #define PHYS_ADDR_SIZE (40)
 #define TG_16K_SIZE (14)

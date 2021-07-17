@@ -79,20 +79,33 @@ undocumented; you can get a complete list by running
    arm/mps2
    arm/musca
    arm/realview
+   arm/sbsa
    arm/versatile
    arm/vexpress
    arm/aspeed
+   arm/sabrelite
    arm/digic
    arm/musicpal
    arm/gumstix
+   arm/nrf
    arm/nseries
+   arm/nuvoton
    arm/orangepi
    arm/palm
+   arm/raspi
    arm/xscale
    arm/collie
    arm/sx1
    arm/stellaris
+   arm/stm32
    arm/virt
+   arm/xlnx-versal-virt
+
+Emulated CPU architecture support
+=================================
+
+.. toctree::
+   arm/emulation
 
 Arm CPU features
 ================

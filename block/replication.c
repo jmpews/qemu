@@ -22,7 +22,7 @@
 #include "sysemu/block-backend.h"
 #include "qapi/error.h"
 #include "qapi/qmp/qdict.h"
-#include "replication.h"
+#include "block/replication.h"
 
 typedef enum {
     BLOCK_REPLICATION_NONE,             /* block replication is not started */
@@ -390,7 +390,14 @@ static void reopen_backing_file(BlockDriverState *bs, bool writable,
     }
 
     if (reopen_queue) {
+        AioContext *ctx = bdrv_get_aio_context(bs);
+        if (ctx != qemu_get_aio_context()) {
+            aio_context_release(ctx);
+        }
         bdrv_reopen_multiple(reopen_queue, errp);
+        if (ctx != qemu_get_aio_context()) {
+            aio_context_acquire(ctx);
+        }
     }
 
     bdrv_subtree_drained_end(s->hidden_disk->bs);
@@ -454,6 +461,7 @@ static void replication_start(ReplicationState *rs, ReplicationMode mode,
     int64_t active_length, hidden_length, disk_length;
     AioContext *aio_context;
     Error *local_err = NULL;
+    BackupPerf perf = { .use_copy_range = true, .max_workers = 1 };
 
     aio_context = bdrv_get_aio_context(bs);
     aio_context_acquire(aio_context);
@@ -558,6 +566,7 @@ static void replication_start(ReplicationState *rs, ReplicationMode mode,
         s->backup_job = backup_job_create(
                                 NULL, s->secondary_disk->bs, s->hidden_disk->bs,
                                 0, MIRROR_SYNC_MODE_NONE, NULL, 0, false, NULL,
+                                &perf,
                                 BLOCKDEV_ON_ERROR_REPORT,
                                 BLOCKDEV_ON_ERROR_REPORT, JOB_INTERNAL,
                                 backup_job_completed, bs, NULL, &local_err);

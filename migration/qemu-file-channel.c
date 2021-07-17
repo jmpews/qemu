@@ -26,7 +26,10 @@
 #include "qemu-file-channel.h"
 #include "qemu-file.h"
 #include "io/channel-socket.h"
+#include "io/channel-tls.h"
 #include "qemu/iov.h"
+#include "qemu/yank.h"
+#include "yank_functions.h"
 
 
 static ssize_t channel_writev_buffer(void *opaque,
@@ -104,6 +107,13 @@ static int channel_close(void *opaque, Error **errp)
     int ret;
     QIOChannel *ioc = QIO_CHANNEL(opaque);
     ret = qio_channel_close(ioc, errp);
+    if ((object_dynamic_cast(OBJECT(ioc), TYPE_QIO_CHANNEL_SOCKET) ||
+         object_dynamic_cast(OBJECT(ioc), TYPE_QIO_CHANNEL_TLS))
+        && OBJECT(ioc)->ref == 1) {
+        yank_unregister_function(MIGRATION_YANK_INSTANCE,
+                                 migration_yank_iochannel,
+                                 QIO_CHANNEL(ioc));
+    }
     object_unref(OBJECT(ioc));
     return ret;
 }

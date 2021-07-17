@@ -46,7 +46,6 @@
 #include "exec/exec-all.h"
 #include "exec/cpu_ldst.h"
 #include "arm_ldst.h"
-#include "hw/semihosting/semihost.h"
 #include "sysemu/hw_accel.h"
 
 #define TRAMPOLINE_CODE_INSTS (1024)
