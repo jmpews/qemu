@@ -345,11 +345,26 @@ struct darwin_kernel_patch darwin_patches_rel_20C69 = {
         "Darwin Kernel Version 20.2.0: Wed Dec  2 20:40:22 PST 2020; "
         "root:xnu-7195.60.75~1/RELEASE_ARM64_T8020",
     .num_patches = 5, .patches = {
+        // BB 0E 00 14 1F 20 03 D5 1F 20 03 D5 1F 20 03 D5
         DARWIN_PATCH_A(0xFFFFFE00077E0580, g_set_cpacr_and_branch_inst), // initial branch
         DARWIN_PATCH(0xFFFFFE00077D4A3C, g_bzero_branch_unconditionally_inst), // bzero conditional branch
         DARWIN_PATCH(0xFFFFFE0007D87438, g_w10_zero_inst), // parse_machfile slide set instruction
-        DARWIN_PATCH(0xFFFFFE0008927A28, g_mov_w0_01_inst), // core trust check
         DARWIN_PATCH(0xFFFFFE0007D87234, g_nop_inst), // load_machfile: disable IMGPF_NOJOP
+        // 00 00 00 12 FD 7B C1 A8
+        DARWIN_PATCH(0xFFFFFE0008927A28, g_mov_w0_01_inst), // core trust check
+    }
+};
+
+struct darwin_kernel_patch darwin_patches_kcov_rel_20C69 = {
+    .darwin_str =
+        "Darwin Kernel Version 20.2.0: Wed Dec  2 20:40:22 PST 2020; "
+        "root:xnu-7195.60.75~1/RELEASE_ARM64_T8020",
+    .num_patches = 1, .patches = {
+        DARWIN_PATCH_A(0xFFFFFE0007AC8580, g_set_cpacr_and_branch_inst), // initial branch
+        // DARWIN_PATCH(0xfffffe0007abca3c, g_bzero_branch_unconditionally_inst), // bzero conditional branch
+        // DARWIN_PATCH(0xfffffe000806f438, g_w10_zero_inst), // parse_machfile slide set instruction
+        // DARWIN_PATCH(0xfffffe000806f234, g_nop_inst), // load_machfile: disable IMGPF_NOJOP
+        // DARWIN_PATCH(0xFFFFFE0008CBA538, g_mov_w0_01_inst), // core trust check
     }
 };
 
@@ -358,7 +373,7 @@ struct darwin_kernel_patch *darwin_patches[] = {
     &darwin_patches_20B5012d,
     &darwin_patches_20C69,
     &darwin_patches_dev_20C69,
-    &darwin_patches_rel_20C69
+    &darwin_patches_kcov_rel_20C69
 };
 
 static void j273_add_cpregs(J273MachineState *nms)
