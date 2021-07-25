@@ -292,6 +292,35 @@ static inline uint64_t ror64(uint64_t word, unsigned int shift)
 }
 
 /**
+ * hswap32 - swap 16-bit halfwords within a 32-bit value
+ * @h: value to swap
+ */
+static inline uint32_t hswap32(uint32_t h)
+{
+    return rol32(h, 16);
+}
+
+/**
+ * hswap64 - swap 16-bit halfwords within a 64-bit value
+ * @h: value to swap
+ */
+static inline uint64_t hswap64(uint64_t h)
+{
+    uint64_t m = 0x0000ffff0000ffffull;
+    h = rol64(h, 32);
+    return ((h & m) << 16) | ((h >> 16) & m);
+}
+
+/**
+ * wswap64 - swap 32-bit words within a 64-bit value
+ * @h: value to swap
+ */
+static inline uint64_t wswap64(uint64_t h)
+{
+    return rol64(h, 32);
+}
+
+/**
  * extract32:
  * @value: the value to extract the bit field from
  * @start: the lowest bit in the bit field (numbered from 0)
@@ -586,6 +615,28 @@ static inline uint64_t half_unshuffle64(uint64_t x)
     x = ((x >> 4) | x) & 0x00FF00FF00FF00FFULL;
     x = ((x >> 8) | x) & 0x0000FFFF0000FFFFULL;
     x = ((x >> 16) | x) & 0x00000000FFFFFFFFULL;
+    return x;
+}
+
+/**
+ * bitrev8:
+ * @x: 8-bit value to be reversed
+ *
+ * Given an input value with bits::
+ *
+ *   ABCDEFGH
+ *
+ * return the value with its bits reversed from left to right::
+ *
+ *   HGFEDCBA
+ *
+ * Returns: the bit-reversed value.
+ */
+static inline uint8_t bitrev8(uint8_t x)
+{
+    x = ((x >> 1) & 0x55) | ((x << 1) & 0xaa);
+    x = ((x >> 2) & 0x33) | ((x << 2) & 0xcc);
+    x = (x >> 4) | (x << 4) ;
     return x;
 }
 

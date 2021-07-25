@@ -28,7 +28,6 @@
 #include "exec/helper-proto.h"
 #include "exec/helper-gen.h"
 #include "exec/translator.h"
-#include "trace-tcg.h"
 #include "exec/log.h"
 #include "qemu/qemu-print.h"
 
@@ -225,17 +224,12 @@ static inline bool use_exit_tb(DisasContext *ctx)
     return (ctx->tbflags & GUSA_EXCLUSIVE) != 0;
 }
 
-static inline bool use_goto_tb(DisasContext *ctx, target_ulong dest)
+static bool use_goto_tb(DisasContext *ctx, target_ulong dest)
 {
-    /* Use a direct jump if in same page and singlestep not enabled */
-    if (unlikely(ctx->base.singlestep_enabled || use_exit_tb(ctx))) {
+    if (use_exit_tb(ctx)) {
         return false;
     }
-#ifndef CONFIG_USER_ONLY
-    return (ctx->base.tb->pc & TARGET_PAGE_MASK) == (dest & TARGET_PAGE_MASK);
-#else
-    return true;
-#endif
+    return translator_use_goto_tb(&ctx->base, dest);
 }
 
 static void gen_goto_tb(DisasContext *ctx, int n, target_ulong dest)
@@ -676,8 +670,7 @@ static void _decode_opc(DisasContext * ctx)
     case 0x6008:		/* swap.b Rm,Rn */
 	{
             TCGv low = tcg_temp_new();
-	    tcg_gen_ext16u_i32(low, REG(B7_4));
-	    tcg_gen_bswap16_i32(low, low);
+            tcg_gen_bswap16_i32(low, REG(B7_4), 0);
             tcg_gen_deposit_i32(REG(B11_8), REG(B7_4), low, 0, 16);
 	    tcg_temp_free(low);
 	}

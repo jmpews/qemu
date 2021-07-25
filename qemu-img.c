@@ -900,6 +900,7 @@ static void common_block_job_cb(void *opaque, int ret)
 
 static void run_block_job(BlockJob *job, Error **errp)
 {
+    uint64_t progress_current, progress_total;
     AioContext *aio_context = blk_get_aio_context(job->blk);
     int ret = 0;
 
@@ -908,9 +909,11 @@ static void run_block_job(BlockJob *job, Error **errp)
     do {
         float progress = 0.0f;
         aio_poll(aio_context, true);
-        if (job->job.progress.total) {
-            progress = (float)job->job.progress.current /
-                       job->job.progress.total * 100.f;
+
+        progress_get_snapshot(&job->job.progress, &progress_current,
+                              &progress_total);
+        if (progress_total) {
+            progress = (float)progress_current / progress_total * 100.f;
         }
         qemu_progress_print(progress, 0);
     } while (!job_is_ready(&job->job) && !job_is_completed(&job->job));
@@ -2505,8 +2508,10 @@ static int img_convert(int argc, char **argv)
 
     if (out_baseimg_param) {
         if (!qemu_opt_get(opts, BLOCK_OPT_BACKING_FMT)) {
-            warn_report("Deprecated use of backing file without explicit "
-                        "backing format");
+            error_report("Use of backing file requires explicit "
+                         "backing format");
+            ret = -1;
+            goto out;
         }
     }
 
@@ -2977,8 +2982,9 @@ static int dump_map_entry(OutputFormat output_format, MapEntry *e,
         break;
     case OFORMAT_JSON:
         printf("{ \"start\": %"PRId64", \"length\": %"PRId64","
-               " \"depth\": %"PRId64", \"zero\": %s, \"data\": %s",
-               e->start, e->length, e->depth,
+               " \"depth\": %"PRId64", \"present\": %s, \"zero\": %s,"
+               " \"data\": %s", e->start, e->length, e->depth,
+               e->present ? "true" : "false",
                e->zero ? "true" : "false",
                e->data ? "true" : "false");
         if (e->has_offset) {
@@ -3044,6 +3050,7 @@ static int get_block_status(BlockDriverState *bs, int64_t offset,
         .offset = map,
         .has_offset = has_offset,
         .depth = depth,
+        .present = !!(ret & BDRV_BLOCK_ALLOCATED),
         .has_filename = filename,
         .filename = filename,
     };
@@ -3059,6 +3066,7 @@ static inline bool entry_mergeable(const MapEntry *curr, const MapEntry *next)
     if (curr->zero != next->zero ||
         curr->data != next->data ||
         curr->depth != next->depth ||
+        curr->present != next->present ||
         curr->has_filename != next->has_filename ||
         curr->has_offset != next->has_offset) {
         return false;
@@ -3762,6 +3770,9 @@ static int img_rebase(int argc, char **argv)
     if (ret == -ENOSPC) {
         error_report("Could not change the backing file to '%s': No "
                      "space left in the file header", out_baseimg);
+    } else if (ret == -EINVAL && out_baseimg && !out_basefmt) {
+        error_report("Could not change the backing file to '%s': backing "
+                     "format must be specified", out_baseimg);
     } else if (ret < 0) {
         error_report("Could not change the backing file to '%s': %s",
             out_baseimg, strerror(-ret));

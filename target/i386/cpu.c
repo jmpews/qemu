@@ -1031,7 +1031,7 @@ FeatureWordInfo feature_word_info[FEATURE_WORDS] = {
             "vmx-invpcid-exit", "vmx-vmfunc", "vmx-shadow-vmcs", "vmx-encls-exit",
             "vmx-rdseed-exit", "vmx-pml", NULL, NULL,
             "vmx-xsaves", NULL, NULL, NULL,
-            NULL, NULL, NULL, NULL,
+            NULL, "vmx-tsc-scaling", NULL, NULL,
             NULL, NULL, NULL, NULL,
         },
         .msr = {
@@ -1304,53 +1304,37 @@ static const X86RegisterInfo32 x86_reg_info_32[CPU_NB_REGS32] = {
 };
 #undef REGISTER
 
-typedef struct ExtSaveArea {
-    uint32_t feature, bits;
-    uint32_t offset, size;
-} ExtSaveArea;
-
-static const ExtSaveArea x86_ext_save_areas[] = {
+ExtSaveArea x86_ext_save_areas[XSAVE_STATE_AREA_COUNT] = {
     [XSTATE_FP_BIT] = {
         /* x87 FP state component is always enabled if XSAVE is supported */
         .feature = FEAT_1_ECX, .bits = CPUID_EXT_XSAVE,
-        /* x87 state is in the legacy region of the XSAVE area */
-        .offset = 0,
         .size = sizeof(X86LegacyXSaveArea) + sizeof(X86XSaveHeader),
     },
     [XSTATE_SSE_BIT] = {
         /* SSE state component is always enabled if XSAVE is supported */
         .feature = FEAT_1_ECX, .bits = CPUID_EXT_XSAVE,
-        /* SSE state is in the legacy region of the XSAVE area */
-        .offset = 0,
         .size = sizeof(X86LegacyXSaveArea) + sizeof(X86XSaveHeader),
     },
     [XSTATE_YMM_BIT] =
           { .feature = FEAT_1_ECX, .bits = CPUID_EXT_AVX,
-            .offset = offsetof(X86XSaveArea, avx_state),
             .size = sizeof(XSaveAVX) },
     [XSTATE_BNDREGS_BIT] =
           { .feature = FEAT_7_0_EBX, .bits = CPUID_7_0_EBX_MPX,
-            .offset = offsetof(X86XSaveArea, bndreg_state),
             .size = sizeof(XSaveBNDREG)  },
     [XSTATE_BNDCSR_BIT] =
           { .feature = FEAT_7_0_EBX, .bits = CPUID_7_0_EBX_MPX,
-            .offset = offsetof(X86XSaveArea, bndcsr_state),
             .size = sizeof(XSaveBNDCSR)  },
     [XSTATE_OPMASK_BIT] =
           { .feature = FEAT_7_0_EBX, .bits = CPUID_7_0_EBX_AVX512F,
-            .offset = offsetof(X86XSaveArea, opmask_state),
             .size = sizeof(XSaveOpmask) },
     [XSTATE_ZMM_Hi256_BIT] =
           { .feature = FEAT_7_0_EBX, .bits = CPUID_7_0_EBX_AVX512F,
-            .offset = offsetof(X86XSaveArea, zmm_hi256_state),
             .size = sizeof(XSaveZMM_Hi256) },
     [XSTATE_Hi16_ZMM_BIT] =
           { .feature = FEAT_7_0_EBX, .bits = CPUID_7_0_EBX_AVX512F,
-            .offset = offsetof(X86XSaveArea, hi16_zmm_state),
             .size = sizeof(XSaveHi16_ZMM) },
     [XSTATE_PKRU_BIT] =
           { .feature = FEAT_7_0_ECX, .bits = CPUID_7_0_ECX_PKU,
-            .offset = offsetof(X86XSaveArea, pkru_state),
             .size = sizeof(XSavePKRU) },
 };
 
@@ -5171,6 +5155,9 @@ void cpu_x86_cpuid(CPUX86State *env, uint32_t index, uint32_t count,
         if (cpu->cache_info_passthrough) {
             host_cpuid(index, 0, eax, ebx, ecx, edx);
             break;
+        } else if (cpu->vendor_cpuid_only && IS_AMD_CPU(env)) {
+            *eax = *ebx = *ecx = *edx = 0;
+            break;
         }
         *eax = 1; /* Number of CPUID[EAX=2] calls required */
         *ebx = 0;
@@ -5192,6 +5179,8 @@ void cpu_x86_cpuid(CPUX86State *env, uint32_t index, uint32_t count,
             if ((*eax & 31) && cs->nr_cores > 1) {
                 *eax |= (cs->nr_cores - 1) << 26;
             }
+        } else if (cpu->vendor_cpuid_only && IS_AMD_CPU(env)) {
+            *eax = *ebx = *ecx = *edx = 0;
         } else {
             *eax = 0;
             switch (count) {
@@ -5961,8 +5950,15 @@ void x86_cpu_expand_features(X86CPU *cpu, Error **errp)
             }
         }
 
-        /* CPU topology with multi-dies support requires CPUID[0x1F] */
-        if (env->nr_dies > 1) {
+        /*
+         * Intel CPU topology with multi-dies support requires CPUID[0x1F].
+         * For AMD Rome/Milan, cpuid level is 0x10, and guest OS should detect
+         * extended toplogy by leaf 0xB. Only adjust it for Intel CPU, unless
+         * cpu->vendor_cpuid_only has been unset for compatibility with older
+         * machine types.
+         */
+        if ((env->nr_dies > 1) &&
+            (IS_INTEL_CPU(env) || !cpu->vendor_cpuid_only)) {
             x86_cpu_adjust_level(cpu, &env->cpuid_min_level, 0x1F);
         }
 
@@ -5989,6 +5985,10 @@ void x86_cpu_expand_features(X86CPU *cpu, Error **errp)
     }
     if (env->cpuid_xlevel2 == UINT32_MAX) {
         env->cpuid_xlevel2 = env->cpuid_min_xlevel2;
+    }
+
+    if (kvm_enabled()) {
+        kvm_hyperv_expand_features(cpu, errp);
     }
 }
 
@@ -6089,38 +6089,16 @@ static void x86_cpu_realizefn(DeviceState *dev, Error **errp)
     Error *local_err = NULL;
     static bool ht_warned;
 
-    /* Process Hyper-V enlightenments */
-    x86_cpu_hyperv_realize(cpu);
-
-    cpu_exec_realizefn(cs, &local_err);
-    if (local_err != NULL) {
-        error_propagate(errp, local_err);
-        return;
-    }
-
-    if (xcc->host_cpuid_required && !accel_uses_host_cpuid()) {
-        g_autofree char *name = x86_cpu_class_get_model_name(xcc);
-        error_setg(&local_err, "CPU model '%s' requires KVM or HVF", name);
-        goto out;
-    }
-
-    if (cpu->ucode_rev == 0) {
-        /* The default is the same as KVM's.  */
-        if (IS_AMD_CPU(env)) {
-            cpu->ucode_rev = 0x01000065;
-        } else {
-            cpu->ucode_rev = 0x100000000ULL;
-        }
-    }
-
-    /* mwait extended info: needed for Core compatibility */
-    /* We always wake on interrupt even if host does not have the capability */
-    cpu->mwait.ecx |= CPUID_MWAIT_EMX | CPUID_MWAIT_IBE;
-
     if (cpu->apic_id == UNASSIGNED_APIC_ID) {
         error_setg(errp, "apic-id property was not initialized properly");
         return;
     }
+
+    /*
+     * Process Hyper-V enlightenments.
+     * Note: this currently has to happen before the expansion of CPU features.
+     */
+    x86_cpu_hyperv_realize(cpu);
 
     x86_cpu_expand_features(cpu, &local_err);
     if (local_err) {
@@ -6146,11 +6124,56 @@ static void x86_cpu_realizefn(DeviceState *dev, Error **errp)
            & CPUID_EXT2_AMD_ALIASES);
     }
 
+    /*
+     * note: the call to the framework needs to happen after feature expansion,
+     * but before the checks/modifications to ucode_rev, mwait, phys_bits.
+     * These may be set by the accel-specific code,
+     * and the results are subsequently checked / assumed in this function.
+     */
+    cpu_exec_realizefn(cs, &local_err);
+    if (local_err != NULL) {
+        error_propagate(errp, local_err);
+        return;
+    }
+
+    if (xcc->host_cpuid_required && !accel_uses_host_cpuid()) {
+        g_autofree char *name = x86_cpu_class_get_model_name(xcc);
+        error_setg(&local_err, "CPU model '%s' requires KVM or HVF", name);
+        goto out;
+    }
+
+    if (cpu->ucode_rev == 0) {
+        /*
+         * The default is the same as KVM's. Note that this check
+         * needs to happen after the evenual setting of ucode_rev in
+         * accel-specific code in cpu_exec_realizefn.
+         */
+        if (IS_AMD_CPU(env)) {
+            cpu->ucode_rev = 0x01000065;
+        } else {
+            cpu->ucode_rev = 0x100000000ULL;
+        }
+    }
+
+    /*
+     * mwait extended info: needed for Core compatibility
+     * We always wake on interrupt even if host does not have the capability.
+     *
+     * requires the accel-specific code in cpu_exec_realizefn to
+     * have already acquired the CPUID data into cpu->mwait.
+     */
+    cpu->mwait.ecx |= CPUID_MWAIT_EMX | CPUID_MWAIT_IBE;
+
     /* For 64bit systems think about the number of physical bits to present.
      * ideally this should be the same as the host; anything other than matching
      * the host can cause incorrect guest behaviour.
      * QEMU used to pick the magic value of 40 bits that corresponds to
      * consumer AMD devices but nothing else.
+     *
+     * Note that this code assumes features expansion has already been done
+     * (as it checks for CPUID_EXT2_LM), and also assumes that potential
+     * phys_bits adjustments to match the host have been already done in
+     * accel-specific code in cpu_exec_realizefn.
      */
     if (env->features[FEAT_8000_0001_EDX] & CPUID_EXT2_LM) {
         if (cpu->phys_bits &&
@@ -6378,6 +6401,11 @@ static void x86_cpu_register_feature_bit_props(X86CPUClass *xcc,
     x86_cpu_register_bit_prop(xcc, name, w, bitnr);
 }
 
+static void x86_cpu_post_initfn(Object *obj)
+{
+    accel_cpu_instance_init(CPU(obj));
+}
+
 static void x86_cpu_initfn(Object *obj)
 {
     X86CPU *cpu = X86_CPU(obj);
@@ -6429,9 +6457,6 @@ static void x86_cpu_initfn(Object *obj)
     if (xcc->model) {
         x86_cpu_load_model(cpu, xcc->model);
     }
-
-    /* if required, do accelerator-specific cpu initializations */
-    accel_cpu_instance_init(CPU(obj));
 }
 
 static int64_t x86_cpu_get_arch_id(CPUState *cs)
@@ -6638,6 +6663,7 @@ static Property x86_cpu_properties[] = {
     DEFINE_PROP_BOOL("full-cpuid-auto-level", X86CPU, full_cpuid_auto_level, true),
     DEFINE_PROP_STRING("hv-vendor-id", X86CPU, hyperv_vendor),
     DEFINE_PROP_BOOL("cpuid-0xb", X86CPU, enable_cpuid_0xb, true),
+    DEFINE_PROP_BOOL("x-vendor-cpuid-only", X86CPU, vendor_cpuid_only, true),
     DEFINE_PROP_BOOL("lmce", X86CPU, enable_lmce, false),
     DEFINE_PROP_BOOL("l3-cache", X86CPU, enable_l3_cache, true),
     DEFINE_PROP_BOOL("kvm-no-smi-migration", X86CPU, kvm_no_smi_migration,
@@ -6776,6 +6802,8 @@ static const TypeInfo x86_cpu_type_info = {
     .parent = TYPE_CPU,
     .instance_size = sizeof(X86CPU),
     .instance_init = x86_cpu_initfn,
+    .instance_post_init = x86_cpu_post_initfn,
+
     .abstract = true,
     .class_size = sizeof(X86CPUClass),
     .class_init = x86_cpu_common_class_init,

@@ -1006,7 +1006,7 @@ route:
     if (cm_event->event != RDMA_CM_EVENT_ADDR_RESOLVED) {
         ERROR(errp, "result not equal to event_addr_resolved %s",
                 rdma_event_str(cm_event->event));
-        perror("rdma_resolve_addr");
+        error_report("rdma_resolve_addr");
         rdma_ack_cm_event(cm_event);
         ret = -EINVAL;
         goto err_resolve_get_addr;
@@ -1131,7 +1131,7 @@ static int qemu_rdma_reg_whole_ram_blocks(RDMAContext *rdma)
                     IBV_ACCESS_REMOTE_WRITE
                     );
         if (!local->block[i].mr) {
-            perror("Failed to register local dest ram block!\n");
+            perror("Failed to register local dest ram block!");
             break;
         }
         rdma->total_registrations++;
@@ -1143,6 +1143,7 @@ static int qemu_rdma_reg_whole_ram_blocks(RDMAContext *rdma)
 
     for (i--; i >= 0; i--) {
         ibv_dereg_mr(local->block[i].mr);
+        local->block[i].mr = NULL;
         rdma->total_registrations--;
     }
 
@@ -1539,16 +1540,20 @@ static int qemu_rdma_wait_comp_channel(RDMAContext *rdma)
 
                 if (pfds[1].revents) {
                     ret = rdma_get_cm_event(rdma->channel, &cm_event);
-                    if (!ret) {
-                        rdma_ack_cm_event(cm_event);
+                    if (ret) {
+                        error_report("failed to get cm event while wait "
+                                     "completion channel");
+                        return -EPIPE;
                     }
 
                     error_report("receive cm event while wait comp channel,"
                                  "cm event is %d", cm_event->event);
                     if (cm_event->event == RDMA_CM_EVENT_DISCONNECTED ||
                         cm_event->event == RDMA_CM_EVENT_DEVICE_REMOVAL) {
+                        rdma_ack_cm_event(cm_event);
                         return -EPIPE;
                     }
+                    rdma_ack_cm_event(cm_event);
                 }
                 break;
 
@@ -2540,7 +2545,7 @@ static int qemu_rdma_connect(RDMAContext *rdma, Error **errp, bool return_path)
     }
 
     if (cm_event->event != RDMA_CM_EVENT_ESTABLISHED) {
-        perror("rdma_get_cm_event != EVENT_ESTABLISHED after rdma_connect");
+        error_report("rdma_get_cm_event != EVENT_ESTABLISHED after rdma_connect");
         ERROR(errp, "connecting to destination!");
         rdma_ack_cm_event(cm_event);
         goto err_rdma_source_connect;
@@ -3285,7 +3290,6 @@ static void rdma_cm_poll_handler(void *opaque)
         error_report("get_cm_event failed %d", errno);
         return;
     }
-    rdma_ack_cm_event(cm_event);
 
     if (cm_event->event == RDMA_CM_EVENT_DISCONNECTED ||
         cm_event->event == RDMA_CM_EVENT_DEVICE_REMOVAL) {
@@ -3298,12 +3302,14 @@ static void rdma_cm_poll_handler(void *opaque)
                 rdma->return_path->error_state = -EPIPE;
             }
         }
+        rdma_ack_cm_event(cm_event);
 
         if (mis->migration_incoming_co) {
             qemu_coroutine_enter(mis->migration_incoming_co);
         }
         return;
     }
+    rdma_ack_cm_event(cm_event);
 }
 
 static int qemu_rdma_accept(RDMAContext *rdma)

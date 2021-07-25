@@ -274,7 +274,6 @@ ERST
         .args_type  = "",
         .params     = "",
         .help       = "show dynamic compiler info",
-        .cmd        = hmp_info_jit,
     },
 #endif
 
@@ -289,7 +288,6 @@ ERST
         .args_type  = "",
         .params     = "",
         .help       = "show dynamic compiler opcode counters",
-        .cmd        = hmp_info_opcount,
     },
 #endif
 
@@ -368,7 +366,6 @@ ERST
         .args_type  = "",
         .params     = "",
         .help       = "show host USB devices",
-        .cmd        = hmp_info_usbhost,
     },
 
 SRST
@@ -866,4 +863,17 @@ ERST
 SRST
   ``info replay``
     Display the record/replay information: mode and the current icount.
+ERST
+
+    {
+        .name       = "dirty_rate",
+        .args_type  = "",
+        .params     = "",
+        .help       = "show dirty rate information",
+        .cmd        = hmp_info_dirty_rate,
+    },
+
+SRST
+  ``info dirty_rate``
+    Display the vcpu dirty rate information.
 ERST

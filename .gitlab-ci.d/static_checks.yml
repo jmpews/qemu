@@ -3,7 +3,8 @@ check-patch:
   image: $CI_REGISTRY_IMAGE/qemu/centos8:latest
   needs:
     job: amd64-centos8-container
-  script: .gitlab-ci.d/check-patch.py
+  script:
+    - .gitlab-ci.d/check-patch.py
   variables:
     GIT_DEPTH: 1000
   rules:
@@ -29,7 +30,7 @@ check-python-pipenv:
   stage: test
   image: $CI_REGISTRY_IMAGE/qemu/python:latest
   script:
-    - make -C python venv-check
+    - make -C python check-pipenv
   variables:
     GIT_DEPTH: 1
   needs:
@@ -42,6 +43,7 @@ check-python-tox:
     - make -C python check-tox
   variables:
     GIT_DEPTH: 1
+    QEMU_TOX_EXTRA_ARGS: --skip-missing-interpreters=false
   needs:
     job: python-container
   allow_failure: true

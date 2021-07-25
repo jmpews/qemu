@@ -278,6 +278,11 @@ static int inet_listen_saddr(InetSocketAddress *saddr,
 
     /* create socket + bind/listen */
     for (e = res; e != NULL; e = e->ai_next) {
+#ifdef IPPROTO_MPTCP
+        if (saddr->has_mptcp && saddr->mptcp) {
+            e->ai_protocol = IPPROTO_MPTCP;
+        }
+#endif
         getnameinfo((struct sockaddr*)e->ai_addr,e->ai_addrlen,
                         uaddr,INET6_ADDRSTRLEN,uport,32,
                         NI_NUMERICHOST | NI_NUMERICSERV);
@@ -456,6 +461,13 @@ int inet_connect_saddr(InetSocketAddress *saddr, Error **errp)
     for (e = res; e != NULL; e = e->ai_next) {
         error_free(local_err);
         local_err = NULL;
+
+#ifdef IPPROTO_MPTCP
+        if (saddr->has_mptcp && saddr->mptcp) {
+            e->ai_protocol = IPPROTO_MPTCP;
+        }
+#endif
+
         sock = inet_connect_addr(saddr, e, &local_err);
         if (sock >= 0) {
             break;
@@ -687,6 +699,17 @@ int inet_parse(InetSocketAddress *addr, const char *str, Error **errp)
         }
         addr->has_keep_alive = true;
     }
+#ifdef IPPROTO_MPTCP
+    begin = strstr(optstr, ",mptcp");
+    if (begin) {
+        if (inet_parse_flag("mptcp", begin + strlen(",mptcp"),
+                            &addr->mptcp, errp) < 0)
+        {
+            return -1;
+        }
+        addr->has_mptcp = true;
+    }
+#endif
     return 0;
 }
 
@@ -1139,6 +1162,25 @@ static int socket_get_fd(const char *fdstr, Error **errp)
         return -1;
     }
     return fd;
+}
+
+int socket_address_parse_named_fd(SocketAddress *addr, Error **errp)
+{
+    int fd;
+
+    if (addr->type != SOCKET_ADDRESS_TYPE_FD) {
+        return 0;
+    }
+
+    fd = socket_get_fd(addr->u.fd.str, errp);
+    if (fd < 0) {
+        return fd;
+    }
+
+    g_free(addr->u.fd.str);
+    addr->u.fd.str = g_strdup_printf("%d", fd);
+
+    return 0;
 }
 
 int socket_connect(SocketAddress *addr, Error **errp)

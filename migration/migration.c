@@ -280,6 +280,9 @@ void migration_incoming_state_destroy(void)
         g_array_free(mis->postcopy_remote_fds, TRUE);
         mis->postcopy_remote_fds = NULL;
     }
+    if (mis->transport_cleanup) {
+        mis->transport_cleanup(mis->transport_data);
+    }
 
     qemu_event_reset(&mis->main_thread_load_event);
 
@@ -453,10 +456,6 @@ static void qemu_start_incoming_migration(const char *uri, Error **errp)
 {
     const char *p = NULL;
 
-    if (!yank_register_instance(MIGRATION_YANK_INSTANCE, errp)) {
-        return;
-    }
-
     qapi_event_send_migration(MIGRATION_STATUS_SETUP);
     if (strstart(uri, "tcp:", &p) ||
         strstart(uri, "unix:", NULL) ||
@@ -471,7 +470,6 @@ static void qemu_start_incoming_migration(const char *uri, Error **errp)
     } else if (strstart(uri, "fd:", &p)) {
         fd_start_incoming_migration(p, errp);
     } else {
-        yank_unregister_instance(MIGRATION_YANK_INSTANCE);
         error_setg(errp, "unknown migration protocol: %s", uri);
     }
 }
@@ -1857,6 +1855,15 @@ void migrate_set_error(MigrationState *s, const Error *error)
     }
 }
 
+static void migrate_error_free(MigrationState *s)
+{
+    QEMU_LOCK_GUARD(&s->error_mutex);
+    if (s->error) {
+        error_free(s->error);
+        s->error = NULL;
+    }
+}
+
 void migrate_fd_error(MigrationState *s, const Error *error)
 {
     trace_migrate_fd_error(error_get_pretty(error));
@@ -2080,9 +2087,14 @@ void qmp_migrate_incoming(const char *uri, Error **errp)
         return;
     }
 
+    if (!yank_register_instance(MIGRATION_YANK_INSTANCE, errp)) {
+        return;
+    }
+
     qemu_start_incoming_migration(uri, &local_err);
 
     if (local_err) {
+        yank_unregister_instance(MIGRATION_YANK_INSTANCE);
         error_propagate(errp, local_err);
         return;
     }
@@ -2093,6 +2105,13 @@ void qmp_migrate_incoming(const char *uri, Error **errp)
 void qmp_migrate_recover(const char *uri, Error **errp)
 {
     MigrationIncomingState *mis = migration_incoming_get_current();
+
+    /*
+     * Don't even bother to use ERRP_GUARD() as it _must_ always be set by
+     * callers (no one should ignore a recover failure); if there is, it's a
+     * programming error.
+     */
+    assert(errp);
 
     if (mis->state != MIGRATION_STATUS_POSTCOPY_PAUSED) {
         error_setg(errp, "Migrate recover can only be run "
@@ -2111,8 +2130,13 @@ void qmp_migrate_recover(const char *uri, Error **errp)
      * only re-setup the migration stream and poke existing migration
      * to continue using that newly established channel.
      */
-    yank_unregister_instance(MIGRATION_YANK_INSTANCE);
     qemu_start_incoming_migration(uri, errp);
+
+    /* Safe to dereference with the assert above */
+    if (*errp) {
+        /* Reset the flag so user could still retry */
+        qatomic_set(&mis->postcopy_recover_triggered, false);
+    }
 }
 
 void qmp_migrate_pause(Error **errp)
@@ -2214,6 +2238,10 @@ static bool migrate_prepare(MigrationState *s, bool blk, bool blk_inc,
     }
 
     if (blk || blk_inc) {
+        if (migrate_colo_enabled()) {
+            error_setg(errp, "No disk migration is required in COLO mode");
+            return false;
+        }
         if (migrate_use_block() || migrate_use_block_incremental()) {
             error_setg(errp, "Command options are incompatible with "
                        "current migration capabilities");
@@ -2799,12 +2827,12 @@ out:
              * Maybe there is something we can do: it looks like a
              * network down issue, and we pause for a recovery.
              */
+            qemu_fclose(rp);
+            ms->rp_state.from_dst_file = NULL;
+            rp = NULL;
             if (postcopy_pause_return_path_thread(ms)) {
                 /* Reload rp, reset the rest */
-                if (rp != ms->rp_state.from_dst_file) {
-                    qemu_fclose(rp);
-                    rp = ms->rp_state.from_dst_file;
-                }
+                rp = ms->rp_state.from_dst_file;
                 ms->rp_state.error = false;
                 goto retry;
             }
@@ -3108,6 +3136,7 @@ static void migration_completion(MigrationState *s)
         if (!ret) {
             bool inactivate = !migrate_colo_enabled();
             ret = vm_stop_force_state(RUN_STATE_FINISH_MIGRATE);
+            trace_migration_completion_vm_stop(ret);
             if (ret >= 0) {
                 ret = migration_maybe_pause(s, &current_active_state,
                                             MIGRATION_STATUS_DEVICE);
@@ -3657,6 +3686,43 @@ bool migration_rate_limit(void)
 }
 
 /*
+ * if failover devices are present, wait they are completely
+ * unplugged
+ */
+
+static void qemu_savevm_wait_unplug(MigrationState *s, int old_state,
+                                    int new_state)
+{
+    if (qemu_savevm_state_guest_unplug_pending()) {
+        migrate_set_state(&s->state, old_state, MIGRATION_STATUS_WAIT_UNPLUG);
+
+        while (s->state == MIGRATION_STATUS_WAIT_UNPLUG &&
+               qemu_savevm_state_guest_unplug_pending()) {
+            qemu_sem_timedwait(&s->wait_unplug_sem, 250);
+        }
+        if (s->state != MIGRATION_STATUS_WAIT_UNPLUG) {
+            int timeout = 120; /* 30 seconds */
+            /*
+             * migration has been canceled
+             * but as we have started an unplug we must wait the end
+             * to be able to plug back the card
+             */
+            while (timeout-- && qemu_savevm_state_guest_unplug_pending()) {
+                qemu_sem_timedwait(&s->wait_unplug_sem, 250);
+            }
+            if (qemu_savevm_state_guest_unplug_pending()) {
+                warn_report("migration: partially unplugged device on "
+                            "failure");
+            }
+        }
+
+        migrate_set_state(&s->state, MIGRATION_STATUS_WAIT_UNPLUG, new_state);
+    } else {
+        migrate_set_state(&s->state, old_state, new_state);
+    }
+}
+
+/*
  * Master migration thread on the source VM.
  * It drives the migration and pumps the data down the outgoing channel.
  */
@@ -3702,22 +3768,10 @@ static void *migration_thread(void *opaque)
 
     qemu_savevm_state_setup(s->to_dst_file);
 
-    if (qemu_savevm_state_guest_unplug_pending()) {
-        migrate_set_state(&s->state, MIGRATION_STATUS_SETUP,
-                          MIGRATION_STATUS_WAIT_UNPLUG);
-
-        while (s->state == MIGRATION_STATUS_WAIT_UNPLUG &&
-               qemu_savevm_state_guest_unplug_pending()) {
-            qemu_sem_timedwait(&s->wait_unplug_sem, 250);
-        }
-
-        migrate_set_state(&s->state, MIGRATION_STATUS_WAIT_UNPLUG,
-                MIGRATION_STATUS_ACTIVE);
-    }
+    qemu_savevm_wait_unplug(s, MIGRATION_STATUS_SETUP,
+                               MIGRATION_STATUS_ACTIVE);
 
     s->setup_time = qemu_clock_get_ms(QEMU_CLOCK_HOST) - setup_start;
-    migrate_set_state(&s->state, MIGRATION_STATUS_SETUP,
-                      MIGRATION_STATUS_ACTIVE);
 
     trace_migration_thread_setup_complete();
 
@@ -3825,21 +3879,9 @@ static void *bg_migration_thread(void *opaque)
     qemu_savevm_state_header(s->to_dst_file);
     qemu_savevm_state_setup(s->to_dst_file);
 
-    if (qemu_savevm_state_guest_unplug_pending()) {
-        migrate_set_state(&s->state, MIGRATION_STATUS_SETUP,
-                          MIGRATION_STATUS_WAIT_UNPLUG);
+    qemu_savevm_wait_unplug(s, MIGRATION_STATUS_SETUP,
+                               MIGRATION_STATUS_ACTIVE);
 
-        while (s->state == MIGRATION_STATUS_WAIT_UNPLUG &&
-               qemu_savevm_state_guest_unplug_pending()) {
-            qemu_sem_timedwait(&s->wait_unplug_sem, 250);
-        }
-
-        migrate_set_state(&s->state, MIGRATION_STATUS_WAIT_UNPLUG,
-                          MIGRATION_STATUS_ACTIVE);
-    } else {
-        migrate_set_state(&s->state, MIGRATION_STATUS_SETUP,
-                MIGRATION_STATUS_ACTIVE);
-    }
     s->setup_time = qemu_clock_get_ms(QEMU_CLOCK_HOST) - setup_start;
 
     trace_migration_thread_setup_complete();
@@ -3937,6 +3979,13 @@ void migrate_fd_connect(MigrationState *s, Error *error_in)
     int64_t rate_limit;
     bool resume = s->state == MIGRATION_STATUS_POSTCOPY_PAUSED;
 
+    /*
+     * If there's a previous error, free it and prepare for another one.
+     * Meanwhile if migration completes successfully, there won't have an error
+     * dumped when calling migrate_fd_cleanup().
+     */
+    migrate_error_free(s);
+
     s->expected_downtime = s->parameters.downtime_limit;
     if (resume) {
         assert(s->cleanup_bh);
@@ -3946,7 +3995,18 @@ void migrate_fd_connect(MigrationState *s, Error *error_in)
     }
     if (error_in) {
         migrate_fd_error(s, error_in);
-        migrate_fd_cleanup(s);
+        if (resume) {
+            /*
+             * Don't do cleanup for resume if channel is invalid, but only dump
+             * the error.  We wait for another channel connect from the user.
+             * The error_report still gives HMP user a hint on what failed.
+             * It's normally done in migrate_fd_cleanup(), but call it here
+             * explicitly.
+             */
+            error_report_err(error_copy(s->error));
+        } else {
+            migrate_fd_cleanup(s);
+        }
         return;
     }
 

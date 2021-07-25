@@ -830,7 +830,7 @@ static uint32_t get_elf_hwcap2(void)
                   PPC2_ISA207S), QEMU_PPC_FEATURE2_ARCH_2_07 |
                   QEMU_PPC_FEATURE2_VEC_CRYPTO);
     GET_FEATURE2(PPC2_ISA300, QEMU_PPC_FEATURE2_ARCH_3_00 |
-                 QEMU_PPC_FEATURE2_DARN);
+                 QEMU_PPC_FEATURE2_DARN | QEMU_PPC_FEATURE2_HAS_IEEE128);
 
 #undef GET_FEATURE
 #undef GET_FEATURE2
@@ -1376,6 +1376,7 @@ static uint32_t get_elf_hwcap(void)
         hwcap |= HWCAP_S390_ETF3EH;
     }
     GET_FEATURE(S390_FEAT_VECTOR, HWCAP_S390_VXRS);
+    GET_FEATURE(S390_FEAT_VECTOR_ENH, HWCAP_S390_VXRS_EXT);
 
     return hwcap;
 }
@@ -1432,6 +1433,19 @@ static void elf_core_copy_regs(target_elf_gregset_t *regs,
 #else
 #define ELF_CLASS ELFCLASS64
 #endif
+
+#define ELF_HWCAP get_elf_hwcap()
+
+static uint32_t get_elf_hwcap(void)
+{
+#define MISA_BIT(EXT) (1 << (EXT - 'A'))
+    RISCVCPU *cpu = RISCV_CPU(thread_cpu);
+    uint32_t mask = MISA_BIT('I') | MISA_BIT('M') | MISA_BIT('A')
+                    | MISA_BIT('F') | MISA_BIT('D') | MISA_BIT('C');
+
+    return cpu->env.misa & mask;
+#undef MISA_BIT
+}
 
 static inline void init_thread(struct target_pt_regs *regs,
                                struct image_info *infop)

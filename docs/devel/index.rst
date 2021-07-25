@@ -27,6 +27,7 @@ Contents:
    migration
    atomics
    stable-process
+   ci
    qtest
    decodetree
    secure-coding-practices
@@ -41,5 +42,8 @@ Contents:
    s390-dasd-ipl
    clocks
    qom
+   modules
    block-coroutine-wrapper
    multi-process
+   ebpf_rss
+   vfio-migration
