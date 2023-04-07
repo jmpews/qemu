@@ -368,12 +368,26 @@ struct darwin_kernel_patch darwin_patches_kcov_rel_20C69 = {
     }
 };
 
+struct darwin_kernel_patch darwin_patches_kcov_dev_20F71= {
+    .darwin_str =
+        "Darwin Kernel Version 20.5.0: Sat May  8 05:10:31 PDT 2021; "
+        "root:xnu-7195.121.3~9/DEVELOPMENT_ARM64_T8101",
+    .num_patches = 0, .patches = {
+        // DARWIN_PATCH_A(0xFFFFFE0007AC8580, g_set_cpacr_and_branch_inst), // initial branch
+        // DARWIN_PATCH(0xfffffe0007abca3c, g_bzero_branch_unconditionally_inst), // bzero conditional branch
+        // DARWIN_PATCH(0xfffffe000806f438, g_w10_zero_inst), // parse_machfile slide set instruction
+        // DARWIN_PATCH(0xfffffe000806f234, g_nop_inst), // load_machfile: disable IMGPF_NOJOP
+        // DARWIN_PATCH(0xFFFFFE0008CBA538, g_mov_w0_01_inst), // core trust check
+    }
+};
+
 struct darwin_kernel_patch *darwin_patches[] = {
     &darwin_patches_20A5364e,
     &darwin_patches_20B5012d,
     &darwin_patches_20C69,
     &darwin_patches_dev_20C69,
-    &darwin_patches_kcov_rel_20C69
+    &darwin_patches_kcov_rel_20C69,
+    &darwin_patches_kcov_dev_20F71
 };
 
 static void j273_add_cpregs(J273MachineState *nms)
