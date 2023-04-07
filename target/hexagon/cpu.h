@@ -1,5 +1,5 @@
 /*
- *  Copyright(c) 2019-2021 Qualcomm Innovation Center, Inc. All Rights Reserved.
+ *  Copyright(c) 2019-2023 Qualcomm Innovation Center, Inc. All Rights Reserved.
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -18,14 +18,14 @@
 #ifndef HEXAGON_CPU_H
 #define HEXAGON_CPU_H
 
-/* Forward declaration needed by some of the header files */
-typedef struct CPUHexagonState CPUHexagonState;
-
 #include "fpu/softfloat-types.h"
 
-#include "qemu-common.h"
 #include "exec/cpu-defs.h"
 #include "hex_regs.h"
+#include "mmvec/mmvec.h"
+#include "qom/object.h"
+#include "hw/core/cpu.h"
+#include "hw/registerfields.h"
 
 #define NUM_PREGS 4
 #define TOTAL_PER_THREAD_REGS 64
@@ -34,6 +34,7 @@ typedef struct CPUHexagonState CPUHexagonState;
 #define STORES_MAX 2
 #define REG_WRITES_MAX 32
 #define PRED_WRITES_MAX 5                   /* 4 insns + endloop */
+#define VSTORES_MAX 2
 
 #define TYPE_HEXAGON_CPU "hexagon-cpu"
 
@@ -52,6 +53,13 @@ typedef struct {
     uint64_t data64;
 } MemLog;
 
+typedef struct {
+    target_ulong va;
+    int size;
+    DECLARE_BITMAP(mask, MAX_VEC_SIZE_BYTES) QEMU_ALIGNED(16);
+    MMVector data QEMU_ALIGNED(16);
+} VStoreLog;
+
 #define EXEC_STATUS_OK          0x0000
 #define EXEC_STATUS_STOP        0x0002
 #define EXEC_STATUS_REPLAY      0x0010
@@ -64,11 +72,13 @@ typedef struct {
 #define CLEAR_EXCEPTION         (env->status &= (~EXEC_STATUS_EXCEPTION))
 #define SET_EXCEPTION           (env->status |= EXEC_STATUS_EXCEPTION)
 
-struct CPUHexagonState {
+/* Maximum number of vector temps in a packet */
+#define VECTOR_TEMPS_MAX            4
+
+typedef struct CPUArchState {
     target_ulong gpr[TOTAL_PER_THREAD_REGS];
     target_ulong pred[NUM_PREGS];
     target_ulong branch_taken;
-    target_ulong next_PC;
 
     /* For comparing with LLDB on target - see adjust_stack_ptrs function */
     target_ulong last_pc_dumped;
@@ -97,26 +107,37 @@ struct CPUHexagonState {
     target_ulong llsc_val;
     uint64_t     llsc_val_i64;
 
-    target_ulong is_gather_store_insn;
-    target_ulong gather_issued;
-};
+    MMVector VRegs[NUM_VREGS] QEMU_ALIGNED(16);
+    MMVector future_VRegs[VECTOR_TEMPS_MAX] QEMU_ALIGNED(16);
+    MMVector tmp_VRegs[VECTOR_TEMPS_MAX] QEMU_ALIGNED(16);
 
-#define HEXAGON_CPU_CLASS(klass) \
-    OBJECT_CLASS_CHECK(HexagonCPUClass, (klass), TYPE_HEXAGON_CPU)
-#define HEXAGON_CPU(obj) \
-    OBJECT_CHECK(HexagonCPU, (obj), TYPE_HEXAGON_CPU)
-#define HEXAGON_CPU_GET_CLASS(obj) \
-    OBJECT_GET_CLASS(HexagonCPUClass, (obj), TYPE_HEXAGON_CPU)
+    MMQReg QRegs[NUM_QREGS] QEMU_ALIGNED(16);
+    MMQReg future_QRegs[NUM_QREGS] QEMU_ALIGNED(16);
+
+    /* Temporaries used within instructions */
+    MMVectorPair VuuV QEMU_ALIGNED(16);
+    MMVectorPair VvvV QEMU_ALIGNED(16);
+    MMVectorPair VxxV QEMU_ALIGNED(16);
+    MMVector     vtmp QEMU_ALIGNED(16);
+    MMQReg       qtmp QEMU_ALIGNED(16);
+
+    VStoreLog vstore[VSTORES_MAX];
+    target_ulong vstore_pending[VSTORES_MAX];
+    bool vtcm_pending;
+    VTCMStoreLog vtcm_log;
+} CPUHexagonState;
+
+OBJECT_DECLARE_CPU_TYPE(HexagonCPU, HexagonCPUClass, HEXAGON_CPU)
 
 typedef struct HexagonCPUClass {
     /*< private >*/
     CPUClass parent_class;
     /*< public >*/
     DeviceRealize parent_realize;
-    DeviceReset parent_reset;
+    ResettablePhases parent_phases;
 } HexagonCPUClass;
 
-typedef struct HexagonCPU {
+struct ArchCPU {
     /*< private >*/
     CPUState parent_obj;
     /*< public >*/
@@ -125,26 +146,33 @@ typedef struct HexagonCPU {
 
     bool lldb_compat;
     target_ulong lldb_stack_adjust;
-} HexagonCPU;
+};
 
 #include "cpu_bits.h"
 
-#define cpu_signal_handler cpu_hexagon_signal_handler
-int cpu_hexagon_signal_handler(int host_signum, void *pinfo, void *puc);
+FIELD(TB_FLAGS, IS_TIGHT_LOOP, 0, 1)
 
 static inline void cpu_get_tb_cpu_state(CPUHexagonState *env, target_ulong *pc,
                                         target_ulong *cs_base, uint32_t *flags)
 {
+    uint32_t hex_flags = 0;
     *pc = env->gpr[HEX_REG_PC];
     *cs_base = 0;
+    if (*pc == env->gpr[HEX_REG_SA0]) {
+        hex_flags = FIELD_DP32(hex_flags, TB_FLAGS, IS_TIGHT_LOOP, 1);
+    }
+    *flags = hex_flags;
+}
+
+static inline int cpu_mmu_index(CPUHexagonState *env, bool ifetch)
+{
 #ifdef CONFIG_USER_ONLY
-    *flags = 0;
+    return MMU_USER_IDX;
 #else
 #error System mode not supported on Hexagon yet
 #endif
 }
 
-typedef struct CPUHexagonState CPUArchState;
 typedef HexagonCPU ArchCPU;
 
 void hexagon_translate_init(void);

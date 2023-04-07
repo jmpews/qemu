@@ -37,7 +37,7 @@
 #include "qemu/osdep.h"
 #include "qemu/units.h"
 #include "qapi/error.h"
-#include "qemu-common.h"
+#include "qemu/cutils.h"
 #include "qemu/error-report.h"
 #include "qemu/module.h"
 #include "hw/qdev-properties.h"
@@ -278,7 +278,9 @@ typedef struct BulkIn {
 struct CCIDBus {
     BusState qbus;
 };
-typedef struct CCIDBus CCIDBus;
+
+#define TYPE_CCID_BUS "ccid-bus"
+OBJECT_DECLARE_SIMPLE_TYPE(CCIDBus, CCID_BUS)
 
 /*
  * powered - defaults to true, changed by PowerOn/PowerOff messages
@@ -1174,9 +1176,6 @@ static Property ccid_props[] = {
     DEFINE_PROP_END_OF_LIST(),
 };
 
-#define TYPE_CCID_BUS "ccid-bus"
-OBJECT_DECLARE_SIMPLE_TYPE(CCIDBus, CCID_BUS)
-
 static const TypeInfo ccid_bus_info = {
     .name = TYPE_CCID_BUS,
     .parent = TYPE_BUS,
@@ -1320,8 +1319,7 @@ static void ccid_realize(USBDevice *dev, Error **errp)
 
     usb_desc_create_serial(dev);
     usb_desc_init(dev);
-    qbus_create_inplace(&s->bus, sizeof(s->bus), TYPE_CCID_BUS, DEVICE(dev),
-                        NULL);
+    qbus_init(&s->bus, sizeof(s->bus), TYPE_CCID_BUS, DEVICE(dev), NULL);
     qbus_set_hotplug_handler(BUS(&s->bus), OBJECT(dev));
     s->intr = usb_ep_get(dev, USB_TOKEN_IN, CCID_INT_IN_EP);
     s->bulk = usb_ep_get(dev, USB_TOKEN_IN, CCID_BULK_IN_EP);

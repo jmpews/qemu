@@ -22,13 +22,12 @@
 
 #include "hw/cpu/core.h"
 #include "target/ppc/cpu.h"
+#include "hw/ppc/pnv.h"
 #include "qom/object.h"
 
 #define TYPE_PNV_CORE "powernv-cpu-core"
 OBJECT_DECLARE_TYPE(PnvCore, PnvCoreClass,
                     PNV_CORE)
-
-typedef struct PnvChip PnvChip;
 
 struct PnvCore {
     /*< private >*/
@@ -67,7 +66,7 @@ OBJECT_DECLARE_SIMPLE_TYPE(PnvQuad, PNV_QUAD)
 struct PnvQuad {
     DeviceState parent_obj;
 
-    uint32_t id;
+    uint32_t quad_id;
     MemoryRegion xscom_regs;
 };
 #endif /* PPC_PNV_CORE_H */

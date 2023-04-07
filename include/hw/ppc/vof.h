@@ -6,6 +6,11 @@
 #ifndef HW_VOF_H
 #define HW_VOF_H
 
+#include "qom/object.h"
+#include "exec/address-spaces.h"
+#include "exec/memory.h"
+#include "exec/cpu-defs.h"
+
 typedef struct Vof {
     uint64_t top_addr; /* copied from rma_size */
     GArray *claimed; /* array of SpaprOfClaimed */
@@ -54,5 +59,7 @@ struct VofMachineIfClass {
 #define VOF_MEM_WRITE(pa, buf, size) \
     address_space_write(&address_space_memory, \
     (pa), MEMTXATTRS_UNSPECIFIED, (buf), (size))
+
+#define PROM_ERROR          (~0U)
 
 #endif /* HW_VOF_H */

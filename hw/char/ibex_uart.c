@@ -31,6 +31,7 @@
 #include "hw/qdev-clock.h"
 #include "hw/qdev-properties.h"
 #include "hw/qdev-properties-system.h"
+#include "hw/registerfields.h"
 #include "migration/vmstate.h"
 #include "qemu/log.h"
 #include "qemu/module.h"
@@ -135,7 +136,7 @@ static void ibex_uart_receive(void *opaque, const uint8_t *buf, int size)
     ibex_uart_update_irqs(s);
 }
 
-static gboolean ibex_uart_xmit(GIOChannel *chan, GIOCondition cond,
+static gboolean ibex_uart_xmit(void *do_not_use, GIOCondition cond,
                                void *opaque)
 {
     IbexUartState *s = opaque;
@@ -550,6 +551,7 @@ static void ibex_uart_class_init(ObjectClass *klass, void *data)
     dc->realize = ibex_uart_realize;
     dc->vmsd = &vmstate_ibex_uart;
     device_class_set_props(dc, ibex_uart_properties);
+    set_bit(DEVICE_CATEGORY_INPUT, dc->categories);
 }
 
 static const TypeInfo ibex_uart_info = {

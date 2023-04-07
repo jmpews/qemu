@@ -11,6 +11,7 @@
 #include "cpu.h"
 #include "host-cpu.h"
 #include "qapi/error.h"
+#include "qemu/error-report.h"
 #include "sysemu/sysemu.h"
 
 /* Note: Only safe for use on x86(-64) hosts */
@@ -150,13 +151,16 @@ void host_cpu_vendor_fms(char *vendor, int *family, int *model, int *stepping)
 
 void host_cpu_instance_init(X86CPU *cpu)
 {
-    uint32_t ebx = 0, ecx = 0, edx = 0;
-    char vendor[CPUID_VENDOR_SZ + 1];
+    X86CPUClass *xcc = X86_CPU_GET_CLASS(cpu);
 
-    host_cpuid(0, 0, NULL, &ebx, &ecx, &edx);
-    x86_cpu_vendor_words2str(vendor, ebx, edx, ecx);
+    if (xcc->model) {
+        uint32_t ebx = 0, ecx = 0, edx = 0;
+        char vendor[CPUID_VENDOR_SZ + 1];
 
-    object_property_set_str(OBJECT(cpu), "vendor", vendor, &error_abort);
+        host_cpuid(0, 0, NULL, &ebx, &ecx, &edx);
+        x86_cpu_vendor_words2str(vendor, ebx, edx, ecx);
+        object_property_set_str(OBJECT(cpu), "vendor", vendor, &error_abort);
+    }
 }
 
 void host_cpu_max_instance_init(X86CPU *cpu)

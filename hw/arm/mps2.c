@@ -35,6 +35,7 @@
 #include "hw/boards.h"
 #include "exec/address-spaces.h"
 #include "sysemu/sysemu.h"
+#include "hw/qdev-properties.h"
 #include "hw/misc/unimp.h"
 #include "hw/char/cmsdk-apb-uart.h"
 #include "hw/timer/cmsdk-apb-timer.h"
@@ -86,6 +87,7 @@ struct MPS2MachineState {
     CMSDKAPBWatchdog watchdog;
     CMSDKAPBTimer timer[2];
     Clock *sysclk;
+    Clock *refclk;
 };
 
 #define TYPE_MPS2_MACHINE "mps2"
@@ -98,6 +100,15 @@ OBJECT_DECLARE_TYPE(MPS2MachineState, MPS2MachineClass, MPS2_MACHINE)
 
 /* Main SYSCLK frequency in Hz */
 #define SYSCLK_FRQ 25000000
+
+/*
+ * The Application Notes don't say anything about how the
+ * systick reference clock is configured. (Quite possibly
+ * they don't have one at all.) This 1MHz clock matches the
+ * pre-existing behaviour that used to be hardcoded in the
+ * armv7m_systick implementation.
+ */
+#define REFCLK_FRQ (1 * 1000 * 1000)
 
 /* Initialize the auxiliary RAM region @mr and map it into
  * the memory map at @base.
@@ -145,6 +156,9 @@ static void mps2_common_init(MachineState *machine)
     /* This clock doesn't need migration because it is fixed-frequency */
     mms->sysclk = clock_new(OBJECT(machine), "SYSCLK");
     clock_set_hz(mms->sysclk, SYSCLK_FRQ);
+
+    mms->refclk = clock_new(OBJECT(machine), "REFCLK");
+    clock_set_hz(mms->refclk, REFCLK_FRQ);
 
     /* The FPGA images have an odd combination of different RAMs,
      * because in hardware they are different implementations and
@@ -223,6 +237,8 @@ static void mps2_common_init(MachineState *machine)
     default:
         g_assert_not_reached();
     }
+    qdev_connect_clock_in(armv7m, "cpuclk", mms->sysclk);
+    qdev_connect_clock_in(armv7m, "refclk", mms->refclk);
     qdev_prop_set_string(armv7m, "cpu-type", machine->cpu_type);
     qdev_prop_set_bit(armv7m, "enable-bitband", true);
     object_property_set_link(OBJECT(&mms->armv7m), "memory",
@@ -267,6 +283,9 @@ static void mps2_common_init(MachineState *machine)
         qdev_connect_gpio_out(orgate_dev, 0, qdev_get_gpio_in(armv7m, 12));
 
         for (i = 0; i < 5; i++) {
+            DeviceState *dev;
+            SysBusDevice *s;
+
             static const hwaddr uartbase[] = {0x40004000, 0x40005000,
                                               0x40006000, 0x40007000,
                                               0x40009000};
@@ -279,12 +298,16 @@ static void mps2_common_init(MachineState *machine)
                 rxovrint = qdev_get_gpio_in(orgate_dev, i * 2 + 1);
             }
 
-            cmsdk_apb_uart_create(uartbase[i],
-                                  qdev_get_gpio_in(armv7m, uartirq[i] + 1),
-                                  qdev_get_gpio_in(armv7m, uartirq[i]),
-                                  txovrint, rxovrint,
-                                  NULL,
-                                  serial_hd(i), SYSCLK_FRQ);
+            dev = qdev_new(TYPE_CMSDK_APB_UART);
+            s = SYS_BUS_DEVICE(dev);
+            qdev_prop_set_chr(dev, "chardev", serial_hd(i));
+            qdev_prop_set_uint32(dev, "pclk-frq", SYSCLK_FRQ);
+            sysbus_realize_and_unref(s, &error_fatal);
+            sysbus_mmio_map(s, 0, uartbase[i]);
+            sysbus_connect_irq(s, 0, qdev_get_gpio_in(armv7m, uartirq[i] + 1));
+            sysbus_connect_irq(s, 1, qdev_get_gpio_in(armv7m, uartirq[i]));
+            sysbus_connect_irq(s, 2, txovrint);
+            sysbus_connect_irq(s, 3, rxovrint);
         }
         break;
     }
@@ -309,7 +332,8 @@ static void mps2_common_init(MachineState *machine)
                                               0x4002c000, 0x4002d000,
                                               0x4002e000};
             Object *txrx_orgate;
-            DeviceState *txrx_orgate_dev;
+            DeviceState *txrx_orgate_dev, *dev;
+            SysBusDevice *s;
 
             txrx_orgate = object_new(TYPE_OR_IRQ);
             object_property_set_int(txrx_orgate, "num-lines", 2, &error_fatal);
@@ -317,13 +341,17 @@ static void mps2_common_init(MachineState *machine)
             txrx_orgate_dev = DEVICE(txrx_orgate);
             qdev_connect_gpio_out(txrx_orgate_dev, 0,
                                   qdev_get_gpio_in(armv7m, uart_txrx_irqno[i]));
-            cmsdk_apb_uart_create(uartbase[i],
-                                  qdev_get_gpio_in(txrx_orgate_dev, 0),
-                                  qdev_get_gpio_in(txrx_orgate_dev, 1),
-                                  qdev_get_gpio_in(orgate_dev, i * 2),
-                                  qdev_get_gpio_in(orgate_dev, i * 2 + 1),
-                                  NULL,
-                                  serial_hd(i), SYSCLK_FRQ);
+
+            dev = qdev_new(TYPE_CMSDK_APB_UART);
+            s = SYS_BUS_DEVICE(dev);
+            qdev_prop_set_chr(dev, "chardev", serial_hd(i));
+            qdev_prop_set_uint32(dev, "pclk-frq", SYSCLK_FRQ);
+            sysbus_realize_and_unref(s, &error_fatal);
+            sysbus_mmio_map(s, 0, uartbase[i]);
+            sysbus_connect_irq(s, 0, qdev_get_gpio_in(txrx_orgate_dev, 0));
+            sysbus_connect_irq(s, 1, qdev_get_gpio_in(txrx_orgate_dev, 1));
+            sysbus_connect_irq(s, 2, qdev_get_gpio_in(orgate_dev, i * 2));
+            sysbus_connect_irq(s, 3, qdev_get_gpio_in(orgate_dev, i * 2 + 1));
         }
         break;
     }
@@ -413,7 +441,17 @@ static void mps2_common_init(MachineState *machine)
                                          0x40023000,    /* Audio */
                                          0x40029000,    /* Shield0 */
                                          0x4002a000};   /* Shield1 */
-        sysbus_create_simple(TYPE_ARM_SBCON_I2C, i2cbase[i], NULL);
+        DeviceState *dev;
+
+        dev = sysbus_create_simple(TYPE_ARM_SBCON_I2C, i2cbase[i], NULL);
+        if (i < 2) {
+            /*
+             * internal-only bus: mark it full to avoid user-created
+             * i2c devices being plugged into it.
+             */
+            BusState *qbus = qdev_get_child_bus(dev, "i2c");
+            qbus_mark_full(qbus);
+        }
     }
     create_unimplemented_device("i2s", 0x40024000, 0x400);
 
@@ -424,10 +462,8 @@ static void mps2_common_init(MachineState *machine)
                  qdev_get_gpio_in(armv7m,
                                   mmc->fpga_type == FPGA_AN511 ? 47 : 13));
 
-    system_clock_scale = NANOSECONDS_PER_SECOND / SYSCLK_FRQ;
-
     armv7m_load_kernel(ARM_CPU(first_cpu), machine->kernel_filename,
-                       0x400000);
+                       0, 0x400000);
 }
 
 static void mps2_class_init(ObjectClass *oc, void *data)

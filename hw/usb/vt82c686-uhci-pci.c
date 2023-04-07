@@ -1,4 +1,5 @@
 #include "qemu/osdep.h"
+#include "hw/isa/vt82c686.h"
 #include "hcd-uhci.h"
 
 static void usb_uhci_vt82c686b_realize(PCIDevice *dev, Error **errp)
@@ -18,19 +19,21 @@ static void usb_uhci_vt82c686b_realize(PCIDevice *dev, Error **errp)
 
 static UHCIInfo uhci_info[] = {
     {
-        .name      = "vt82c686b-usb-uhci",
+        .name      = TYPE_VT82C686B_USB_UHCI,
         .vendor_id = PCI_VENDOR_ID_VIA,
         .device_id = PCI_DEVICE_ID_VIA_UHCI,
         .revision  = 0x01,
         .irq_pin   = 3,
         .realize   = usb_uhci_vt82c686b_realize,
         .unplug    = true,
+        /* Reason: only works as USB function of VT82xx superio chips */
+        .notuser   = true,
     }
 };
 
 static const TypeInfo vt82c686b_usb_uhci_type_info = {
     .parent         = TYPE_UHCI,
-    .name           = "vt82c686b-usb-uhci",
+    .name           = TYPE_VT82C686B_USB_UHCI,
     .class_init     = uhci_data_class_init,
     .class_data     = uhci_info,
 };

@@ -28,6 +28,7 @@ OBJECT_DECLARE_SIMPLE_TYPE(GenPCIERootPort, GEN_PCIE_ROOT_PORT)
         (GEN_PCIE_ROOT_PORT_AER_OFFSET + PCI_ERR_SIZEOF)
 
 #define GEN_PCIE_ROOT_PORT_MSIX_NR_VECTOR       1
+#define GEN_PCIE_ROOT_DEFAULT_IO_RANGE          4096
 
 struct GenPCIERootPort {
     /*< private >*/
@@ -75,6 +76,7 @@ static bool gen_rp_test_migrate_msix(void *opaque, int version_id)
 static void gen_rp_realize(DeviceState *dev, Error **errp)
 {
     PCIDevice *d = PCI_DEVICE(dev);
+    PCIESlot *s = PCIE_SLOT(d);
     GenPCIERootPort *grp = GEN_PCIE_ROOT_PORT(d);
     PCIERootPortClass *rpc = PCIE_ROOT_PORT_GET_CLASS(d);
     Error *local_err = NULL;
@@ -85,6 +87,14 @@ static void gen_rp_realize(DeviceState *dev, Error **errp)
         return;
     }
 
+    /*
+     * reserving IO space led to worse issues in 6.1, when this hunk was
+     * introduced. (see commit: 211afe5c69b59). Keep this broken for 6.1
+     * machine type ABI compatibility only
+     */
+    if (s->hide_native_hotplug_cap && grp->res_reserve.io == -1 && s->hotplug) {
+        grp->res_reserve.io = GEN_PCIE_ROOT_DEFAULT_IO_RANGE;
+    }
     int rc = pci_bridge_qemu_reserve_cap_init(d, 0,
                                               grp->res_reserve, errp);
 

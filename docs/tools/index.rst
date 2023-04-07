@@ -1,11 +1,11 @@
-.. This is the top level page for the 'tools' manual
+.. _Tools:
 
-
+-----
 Tools
-=====
+-----
 
-
-Contents:
+This section of the manual documents QEMU's "tools": its
+command line utilities and other standalone programs.
 
 .. toctree::
    :maxdepth: 2
@@ -16,4 +16,3 @@ Contents:
    qemu-pr-helper
    qemu-trace-stap
    virtfs-proxy-helper
-   virtiofsd

@@ -49,23 +49,61 @@ static void x86_cpu_exec_exit(CPUState *cs)
 static void x86_cpu_synchronize_from_tb(CPUState *cs,
                                         const TranslationBlock *tb)
 {
-    X86CPU *cpu = X86_CPU(cs);
-
-    cpu->env.eip = tb->pc - tb->cs_base;
+    /* The instruction pointer is always up to date with CF_PCREL. */
+    if (!(tb_cflags(tb) & CF_PCREL)) {
+        CPUX86State *env = cs->env_ptr;
+        env->eip = tb->pc - tb->cs_base;
+    }
 }
+
+static void x86_restore_state_to_opc(CPUState *cs,
+                                     const TranslationBlock *tb,
+                                     const uint64_t *data)
+{
+    X86CPU *cpu = X86_CPU(cs);
+    CPUX86State *env = &cpu->env;
+    int cc_op = data[1];
+
+    if (tb_cflags(tb) & CF_PCREL) {
+        env->eip = (env->eip & TARGET_PAGE_MASK) | data[0];
+    } else {
+        env->eip = data[0] - tb->cs_base;
+    }
+    if (cc_op != CC_OP_DYNAMIC) {
+        env->cc_op = cc_op;
+    }
+}
+
+#ifndef CONFIG_USER_ONLY
+static bool x86_debug_check_breakpoint(CPUState *cs)
+{
+    X86CPU *cpu = X86_CPU(cs);
+    CPUX86State *env = &cpu->env;
+
+    /* RF disables all architectural breakpoints. */
+    return !(env->eflags & RF_MASK);
+}
+#endif
 
 #include "hw/core/tcg-cpu-ops.h"
 
 static const struct TCGCPUOps x86_tcg_ops = {
     .initialize = tcg_x86_init,
     .synchronize_from_tb = x86_cpu_synchronize_from_tb,
+    .restore_state_to_opc = x86_restore_state_to_opc,
     .cpu_exec_enter = x86_cpu_exec_enter,
     .cpu_exec_exit = x86_cpu_exec_exit,
-    .cpu_exec_interrupt = x86_cpu_exec_interrupt,
-    .do_interrupt = x86_cpu_do_interrupt,
+#ifdef CONFIG_USER_ONLY
+    .fake_user_interrupt = x86_cpu_do_interrupt,
+    .record_sigsegv = x86_cpu_record_sigsegv,
+    .record_sigbus = x86_cpu_record_sigbus,
+#else
     .tlb_fill = x86_cpu_tlb_fill,
-#ifndef CONFIG_USER_ONLY
+    .do_interrupt = x86_cpu_do_interrupt,
+    .cpu_exec_interrupt = x86_cpu_exec_interrupt,
+    .do_unaligned_access = x86_cpu_do_unaligned_access,
     .debug_excp_handler = breakpoint_handler,
+    .debug_check_breakpoint = x86_debug_check_breakpoint,
 #endif /* !CONFIG_USER_ONLY */
 };
 
@@ -99,7 +137,8 @@ static void tcg_cpu_xsave_init(void)
 }
 
 /*
- * TCG-specific defaults that override all CPU models when using TCG
+ * TCG-specific defaults that override cpudef models when using TCG.
+ * Only for builtin_x86_defs models initialized with x86_register_cpudef_types.
  */
 static PropValue tcg_default_props[] = {
     { "vme", "off" },
@@ -109,8 +148,12 @@ static PropValue tcg_default_props[] = {
 static void tcg_cpu_instance_init(CPUState *cs)
 {
     X86CPU *cpu = X86_CPU(cs);
-    /* Special cases not set in the X86CPUDefinition structs: */
-    x86_cpu_apply_props(cpu, tcg_default_props);
+    X86CPUClass *xcc = X86_CPU_GET_CLASS(cpu);
+
+    if (xcc->model) {
+        /* Special cases not set in the X86CPUDefinition structs: */
+        x86_cpu_apply_props(cpu, tcg_default_props);
+    }
 
     tcg_cpu_xsave_init();
 }
