@@ -22,7 +22,6 @@
 
 #include "qemu/osdep.h"
 #include "qapi/error.h"
-#include "qemu-common.h"
 #include "hw/arm/boot.h"
 #include "exec/address-spaces.h"
 #include "hw/misc/unimp.h"
@@ -30,7 +29,6 @@
 #include "qemu/error-report.h"
 #include "hw/platform-bus.h"
 #include "exec/memory.h"
-#include "qemu-common.h"
 #include "exec/hwaddr.h"
 #include "hw/boards.h"
 #include "hw/arm/boot.h"

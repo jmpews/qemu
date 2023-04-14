@@ -24,7 +24,6 @@
 #ifndef HW_ARM_FILE_MMIO_DEV_H
 #define HW_ARM_FILE_MMIO_DEV_H
 
-#include "qemu-common.h"
 #include "hw/arm/boot.h"
 
 typedef struct {

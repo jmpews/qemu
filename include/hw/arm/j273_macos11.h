@@ -25,7 +25,6 @@
 #ifndef HW_ARM_J273_H
 #define HW_ARM_J273_H
 
-#include "qemu-common.h"
 #include "exec/hwaddr.h"
 #include "hw/boards.h"
 #include "hw/arm/boot.h"

@@ -24,7 +24,6 @@
 
 #include "qemu/osdep.h"
 #include "qapi/error.h"
-#include "qemu-common.h"
 #include "hw/arm/boot.h"
 #include "exec/address-spaces.h"
 #include "hw/misc/unimp.h"

@@ -24,9 +24,9 @@
 #ifndef HW_ARM_XNU_CPACR_H
 #define HW_ARM_XNU_CPACR_H
 
-#include "qemu-common.h"
 #include "hw/arm/boot.h"
 #include "cpu.h"
+#include "target/arm/cpregs.h"
 
 typedef struct {
     uint64_t val;

@@ -24,7 +24,6 @@
 
 #include "qemu/osdep.h"
 #include "qapi/error.h"
-#include "qemu-common.h"
 #include "hw/arm/boot.h"
 #include "exec/address-spaces.h"
 #include "hw/misc/unimp.h"
@@ -184,7 +183,6 @@ static const ARMCPRegInfo j273_cp_reginfo_kvm[] = {
       .readfn = qemu_call_status,
       .writefn = qemu_call },
 
-    REGINFO_SENTINEL,
 };
 
 // This is the same as the array for kvm, but without
@@ -240,7 +238,6 @@ static const ARMCPRegInfo j273_cp_reginfo_tcg[] = {
       .readfn = qemu_call_status,
       .writefn = qemu_call },
 
-    REGINFO_SENTINEL,
 };
 
 static uint32_t g_nop_inst = NOP_INST;
@@ -385,8 +382,8 @@ struct darwin_kernel_patch *darwin_patches[] = {
     &darwin_patches_20A5364e,
     &darwin_patches_20B5012d,
     &darwin_patches_20C69,
-    &darwin_patches_dev_20C69,
-    &darwin_patches_kcov_rel_20C69,
+    // &darwin_patches_dev_20C69,
+    // &darwin_patches_kcov_rel_20C69,
     &darwin_patches_kcov_dev_20F71
 };
 

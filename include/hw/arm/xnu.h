@@ -24,7 +24,6 @@
 #ifndef HW_ARM_XNU_H
 #define HW_ARM_XNU_H
 
-#include "qemu-common.h"
 #include "hw/arm/boot.h"
 #include "hw/arm/xnu_mem.h"
 #include "hw/arm/xnu_trampoline_hook.h"

@@ -23,7 +23,6 @@
 
 #include "qemu/osdep.h"
 #include "qapi/error.h"
-#include "qemu-common.h"
 #include "hw/arm/boot.h"
 #include "sysemu/sysemu.h"
 #include "qemu/error-report.h"
@@ -92,7 +91,7 @@
 hwaddr pt_tte_el1(ARMCPU *cpu, AddressSpace *as, hwaddr va, bool make_exe)
 {
     CPUARMState *env = &cpu->env;
-    uint64_t tcr = env->cp15.tcr_el[1].raw_tcr;
+    uint64_t tcr = env->cp15.tcr_el[1];
     uint64_t tcr_ips = extract64(tcr, TCR_IPS_INDEX, TCR_IPS_SIZE);
     uint64_t tcr_tg1 = extract64(tcr, TCR_TG1_INDEX, TCR_TG1_SIZE);
     uint64_t tcr_t1sz = extract64(tcr, TCR_T1SZ_INDEX, TCR_T1SZ_SIZE);

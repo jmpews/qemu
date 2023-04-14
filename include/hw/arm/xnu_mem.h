@@ -24,7 +24,6 @@
 #ifndef HW_ARM_XNU_MEM_H
 #define HW_ARM_XNU_MEM_H
 
-#include "qemu-common.h"
 #include "hw/arm/boot.h"
 #include "target/arm/cpu.h"
 
