@@ -37,6 +37,7 @@
 #include "hw/arm/exynos4210.h"
 #include "hw/arm/guest-services/general.h"
 
+
 #define J273_SECURE_RAM_SIZE (0x100000)
 #define J273_PHYS_BASE (0x40000000)
 
@@ -477,6 +478,48 @@ static void j273_patch_kernel(AddressSpace *nsas, char *darwin_ver)
     }
 }
 
+uint32_t get_adrp_inst(hwaddr source, hwaddr target, uint8_t reg_id);
+uint32_t get_add_inst(uint8_t xd, uint8_t xn, hwaddr imm);
+uint32_t get_br_inst(uint8_t reg_id);
+void get_mov_64imm_insts(uint32_t insn_seq[4], uint8_t reg_id, uint64_t imm);
+uint32_t get_bl_inst(hwaddr source, hwaddr target);
+uint32_t get_b_inst(hwaddr source, hwaddr target);
+uint32_t get_blr_inst(uint8_t reg_id);
+uint32_t get_mov_reg_reg(uint8_t dst_reg_id, uint8_t src_reg_id);
+
+uint8_t xnu_pre_hack_shellcode[] = {
+        0xfc, 0x6f, 0xba, 0xa9, 0xfa, 0x67, 0x01, 0xa9, 0xf8, 0x5f, 0x02, 0xa9, 0xf6, 0x57, 0x03, 0xa9, 0xf4, 0x4f, 0x04, 0xa9, 0xfd, 0x7b, 0x05, 0xa9, 0xfd, 0x43, 0x01, 0x91, 0xf3, 0x03, 0x00, 0xaa, 0x08, 0x0c, 0x40, 0xf9, 0x00, 0x01, 0x3f, 0xd6, 0x68, 0x12, 0x40, 0xf9, 0x00, 0x01, 0x3f, 0xd6, 0x16, 0x04, 0x40, 0xf9, 0x60, 0x16, 0x40, 0xf9, 0x68, 0x02, 0x40, 0xf9, 0x00, 0x01, 0x3f, 0xd6, 0x68, 0x1a, 0x40, 0xf9, 0x17, 0xc4, 0x72, 0x92, 0xe9, 0xff, 0x87, 0x52, 0x08, 0x00, 0x08, 0x8b, 0x08, 0x01, 0x09, 0x8b, 0x18, 0xc5, 0x72, 0x92, 0x48, 0x20, 0x38, 0xd5, 0x08, 0x15, 0x70, 0x92, 0x09, 0x0e, 0xc0, 0xd2, 0x0a, 0xfe, 0xcf, 0xd2, 0x1f, 0x41, 0x44, 0xf1, 0x59, 0x01, 0x89, 0x9a, 0xff, 0x02, 0x18, 0xeb, 0x02, 0x07, 0x00, 0x54, 0x3a, 0x28, 0x88, 0x52, 0x3a, 0x28, 0xa8, 0x72, 0x08, 0xfc, 0x4b, 0xd3, 0x1b, 0xc5, 0x7d, 0x92, 0x1c, 0x18, 0x80, 0x92, 0xfc, 0x73, 0xff, 0xf2, 0xe8, 0x02, 0x19, 0x8a, 0x69, 0x06, 0x40, 0xf9, 0xd5, 0x86, 0x48, 0x8b, 0xe0, 0x03, 0x15, 0xaa, 0x20, 0x01, 0x3f, 0xd6, 0xf4, 0x03, 0x00, 0xaa, 0x54, 0x00, 0x00, 0x37, 0x5f, 0x03, 0x00, 0xb9, 0xd4, 0x00, 0xd8, 0xb6, 0x94, 0xfa, 0x44, 0x92, 0x68, 0x0a, 0x40, 0xf9, 0xe0, 0x03, 0x15, 0xaa, 0xe1, 0x03, 0x14, 0xaa, 0x00, 0x01, 0x3f, 0xd6, 0x88, 0x8e, 0x74, 0x92, 0x69, 0x06, 0x40, 0xf9, 0xea, 0xfe, 0x56, 0xd3, 0x4a, 0x29, 0x7d, 0x92, 0x15, 0x01, 0x0a, 0x8b, 0xe0, 0x03, 0x15, 0xaa, 0x20, 0x01, 0x3f, 0xd6, 0xf4, 0x03, 0x00, 0xaa, 0xe8, 0x03, 0x34, 0x2a, 0x1f, 0x05, 0x40, 0xf2, 0x40, 0x00, 0x00, 0x54, 0x5f, 0x03, 0x00, 0xb9, 0xd4, 0x00, 0xd8, 0xb6, 0x94, 0xfa, 0x44, 0x92, 0x68, 0x0a, 0x40, 0xf9, 0xe0, 0x03, 0x15, 0xaa, 0xe1, 0x03, 0x14, 0xaa, 0x00, 0x01, 0x3f, 0xd6, 0x68, 0x2b, 0x7d, 0x92, 0x89, 0x8e, 0x74, 0x92, 0x6a, 0x06, 0x40, 0xf9, 0x34, 0x01, 0x08, 0x8b, 0xe0, 0x03, 0x14, 0xaa, 0x40, 0x01, 0x3f, 0xd6, 0x40, 0x00, 0x00, 0x37, 0x5f, 0x03, 0x00, 0xb9, 0x08, 0x00, 0x1c, 0x8a, 0x01, 0x01, 0x46, 0xb2, 0x68, 0x0a, 0x40, 0xf9, 0xe0, 0x03, 0x14, 0xaa, 0x00, 0x01, 0x3f, 0xd6, 0xf7, 0x12, 0x40, 0x91, 0x7b, 0x23, 0x00, 0x91, 0xff, 0x02, 0x18, 0xeb, 0x03, 0xfa, 0xff, 0x54, 0x9f, 0x3f, 0x03, 0xd5, 0x1f, 0x83, 0x08, 0xd5, 0x9f, 0x3f, 0x03, 0xd5, 0xdf, 0x3f, 0x03, 0xd5, 0x68, 0x02, 0x40, 0xf9, 0x60, 0x1e, 0x40, 0xf9, 0x00, 0x01, 0x3f, 0xd6, 0xfd, 0x7b, 0x45, 0xa9, 0xf4, 0x4f, 0x44, 0xa9, 0xf6, 0x57, 0x43, 0xa9, 0xf8, 0x5f, 0x42, 0xa9, 0xfa, 0x67, 0x41, 0xa9, 0xfc, 0x6f, 0xc6, 0xa8, 0x00, 0x00, 0x1f, 0xd6
+};
+
+#define PAGE_4K_BITS (12)
+#define PAGE_4K_MASK (((uint64_t)1 << PAGE_4K_BITS) - 1)
+
+#define ALIGN_FLOOR(address, range) ((uintptr_t)address & ~((uintptr_t)range - 1))
+#define ALIGN_CEIL(address, range) (((uintptr_t)address + (uintptr_t)range - 1) & ~((uintptr_t)range - 1))
+
+void encod_insn_seq(AddressSpace *nsas, hwaddr shellcode_area, int *in_out_offset, uint32_t *insn_seq,
+                    uint32_t num_insns)
+{
+    address_space_rw(nsas, vtop_static(shellcode_area + *in_out_offset),
+                     MEMTXATTRS_UNSPECIFIED, (uint8_t *)insn_seq,
+                     num_insns * sizeof(uint32_t), 1);
+    *in_out_offset += num_insns * sizeof(uint32_t);
+}
+
+#define submask(x) ((1L << ((x) + 1)) - 1)
+#define bits(obj, st, fn) (((obj) >> (st)) & submask((fn) - (st)))
+#define set_bits(obj, st, fn, bits) obj = (((~(submask(fn - st) << st)) & obj) | (bits << st))
+
+uint32_t get_adr(uint8_t reg_id, uintptr_t src, uintptr_t dst) {
+  uint32_t adr_inst = 0x10000000 | reg_id;
+  uint64_t diff = dst - src;
+  uint64_t immlo = bits(diff, 0, 1);
+  uint64_t immhi = bits(diff, 2, 20);
+  set_bits(adr_inst, 29, 30, immlo);
+  set_bits(adr_inst, 5, 23, immhi);
+  return adr_inst;
+}
+
 static void j273_ns_memory_setup(MachineState *machine, MemoryRegion *sysmem,
                                 AddressSpace *nsas)
 {
@@ -546,6 +589,101 @@ static void j273_ns_memory_setup(MachineState *machine, MemoryRegion *sysmem,
     phys_ptr += align_64k_high(dtb_size);
     used_ram_for_blobs += align_64k_high(dtb_size);
 
+    fprintf(stderr, "dtb_va: %p, dtb_size: %p\n", (void *) dtb_va, (void *) dtb_size);
+
+
+    // disable physmap_slide
+    uint32_t mov_x0_0x0 = 0xd2800000;
+    address_space_rw(nsas, vtop_static(0xfffffe0007c0d2d4), MEMTXATTRS_UNSPECIFIED, (uint8_t *) &mov_x0_0x0, 4, 1);
+
+    uintptr_t craft_shellcode(AddressSpace *nsas, MemoryRegion *mem, uintptr_t *in_out_curr_pa, uintptr_t hook_addr, uintptr_t kernelcache_base);
+    const uintptr_t shellcode_area = 0xfffffe0007ac5784;
+    uintptr_t kernelcache_base = kernel_low;
+    uintptr_t bsd_init_fn_addr = 0xfffffe0007fa92ac;
+    uintptr_t kernel_bootstrap_thread_fn_addr = 0xFFFFFE0007B2FD68;
+    craft_shellcode(nsas, sysmem, &phys_ptr, kernel_bootstrap_thread_fn_addr, kernelcache_base);
+
+    // {
+    //     uintptr_t kernelcache_base = kernel_low;
+    //     uint32_t magic;
+    //     address_space_read(nsas, vtop_static(kernelcache_base), MEMTXATTRS_UNSPECIFIED,
+    //                        (uint8_t *) &magic, sizeof(magic));
+    //     fprintf(stderr, "g_virt_base: %p, magic: %p\n", (void *) kernelcache_base, (void *) magic);
+    //
+    //     char *gollum_lib_path = "/usr/local/Workspace/Project.wrk/ResearchWorkspace/cmake-build-macos-arm64-kern/gollum_kern/libgollum_kern.dylib";
+    //     gollum_lib_path = "/usr/local/workspace/project.wrk/ResearchWorkspace/cmake-build-macos-silicon-kern/gollum_kern/libgollum_kern.dylib";
+    //     size_t gollum_lib_size = 0;
+    //     macho_map_raw_file(gollum_lib_path, nsas, sysmem, "gollum_lib.j273", phys_ptr, &gollum_lib_size);
+    //     fprintf(stderr, "gollum: pa: %p, va: %p va_end: %p, szie: %p\n", (void *) phys_ptr,
+    //             (void *) ptov_static(phys_ptr), (void *) ptov_static(phys_ptr + gollum_lib_size),
+    //             (void *) gollum_lib_size);
+    //
+    //     uintptr_t gollum_lib_pa = phys_ptr;
+    //     phys_ptr += align_64k_high(gollum_lib_size);
+    //     used_ram_for_blobs += align_64k_high(gollum_lib_size);
+    //
+    //     // cpu_tte
+    //     // 0xfffffe000a320000, 0x4a320000
+    //
+    //     uintptr_t gPongoHandoff_pa = gollum_lib_pa + 0x8c058;
+    //     address_space_rw(nsas, gPongoHandoff_pa, MEMTXATTRS_UNSPECIFIED, (uint8_t *) &kernelcache_base, 8, 1);
+    //
+    //     // 0xFFFFFE0007AC5784
+    //     uintptr_t gollum_init_fn_pa = gollum_lib_pa + 0x4958;
+    //
+    //     const uintptr_t shellcode_area = 0xfffffe0007ac5784;
+    //     uintptr_t shellcode_start_addr;
+    //     {
+    //       int offset = 0;
+    //
+    //       struct xnu_pre_hack_package_t {
+    //         uintptr_t phystokv;
+    //         uintptr_t phys_read64;
+    //         uintptr_t phys_write64;
+    //
+    //         uintptr_t current_task;
+    //         uintptr_t get_task_pmap;
+    //
+    //         // within topOfKernelData
+    //         uintptr_t gollum_lib_pa;
+    //         uintptr_t gollum_lib_size;
+    //
+    //         uintptr_t gollum_init_pa;
+    //       } params;
+    //
+    //       params.phystokv = 0xfffffe0007c18e58;
+    //       params.phys_read64 = 0xfffffe0007c0f778;
+    //       params.phys_write64 = 0xfffffe0007c0f9cc;
+    //       params.current_task = 0xfffffe0007b3b884;
+    //       params.get_task_pmap = 0xfffffe0007b5fe78;
+    //       params.gollum_lib_pa = gollum_lib_pa;
+    //       params.gollum_lib_size = ALIGN_CEIL(gollum_lib_size, 0x4000);
+    //       params.gollum_init_pa = gollum_init_fn_pa;
+    //
+    //       uintptr_t params_addr = shellcode_area + offset;
+    //       encod_insn_seq(nsas, shellcode_area, &offset, &params, sizeof(params) / 4);
+    //
+    //       shellcode_start_addr = shellcode_area + offset;
+    //       uint32_t addr_x0_params = get_adr(0, shellcode_area + offset, params_addr);
+    //       encod_insn_seq(nsas, shellcode_area, &offset, &addr_x0_params, 1);
+    //       fprintf(stderr, "%p: addr_x0_params: %p\n",shellcode_start_addr,  (void *) addr_x0_params);
+    //
+    //       encod_insn_seq(nsas, shellcode_area, &offset, &xnu_pre_hack_shellcode[0], sizeof(xnu_pre_hack_shellcode) / 4);
+    //     }
+    //
+    //     uintptr_t bsd_init_fn_addr = 0xfffffe0007fa92ac;
+    //     bsd_init_fn_addr = 0xFFFFFE0007B2FD68;
+    //     uint32_t bl_shellcode = get_bl_inst(bsd_init_fn_addr, shellcode_start_addr);
+    //     address_space_rw(nsas, vtop_static(bsd_init_fn_addr), MEMTXATTRS_UNSPECIFIED, (uint8_t *) &bl_shellcode, 4, 1);
+    //
+    //     // uint32_t tramp[3];
+    //     // int scratch_reg = 2;
+    //     // tramp[0] = get_adrp_inst(bsd_init_addr, gollum_init_fn_addr, scratch_reg);
+    //     // tramp[1] = get_add_inst(scratch_reg, scratch_reg, gollum_init_fn_addr & PAGE_4K_MASK);
+    //     // tramp[2] = get_br_inst(scratch_reg);
+    //     // address_space_rw(nsas, vtop_static(bsd_init_addr), MEMTXATTRS_UNSPECIFIED, (uint8_t *) &tramp[0], 12, 1);
+    // }
+
     //now account for kernel boot args
     used_ram_for_blobs += align_64k_high(sizeof(struct xnu_arm64_boot_args));
     kbootargs_pa = phys_ptr;
@@ -568,6 +706,7 @@ static void j273_ns_memory_setup(MachineState *machine, MemoryRegion *sysmem,
                          virt_base, J273_PHYS_BASE, mem_size,
                          top_of_kernel_data_pa, dtb_va, dtb_size,
                          v_bootargs, nms->kern_args);
+    fprintf(stderr, "bootargs: pa: %p, va: %p\n", (void *) kbootargs_pa, (void *) ptov_static(kbootargs_pa));
 
     allocate_ram(sysmem, "j273.ram", allocated_ram_pa, remaining_mem_size);
 }

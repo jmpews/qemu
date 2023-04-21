@@ -157,7 +157,45 @@
 static AddressSpace *xnu_hook_tr_as = NULL;
 static ARMCPU *xnu_hook_tr_cpu = NULL;
 
-static uint32_t get_adrp_inst(hwaddr source, hwaddr target, uint8_t reg_id)
+
+void get_mov_64imm_insts(uint32_t insn_seq[4], uint8_t reg_id, uint64_t imm) {
+    uint32_t movz_inst = 0xd2800000 | reg_id;
+    uint32_t movk_inst = 0xf2800000 | reg_id;
+    int shift = 0;
+    insn_seq[0] = movz_inst | ((imm & 0xffff) << 5);
+    shift += 16;
+    for (int i = 1; i < 4; i++) {
+        insn_seq[i] = movk_inst | ((imm >> shift) & 0xffff) << 5 | ((shift / 16) << 21);
+        shift += 16;
+    }
+}
+
+#define submask(x) ((1L << ((x) + 1)) - 1)
+#define bits(obj, st, fn) (((obj) >> (st)) & submask((fn) - (st)))
+#define set_bits(obj, st, fn, bits) obj = (((~(submask(fn - st) << st)) & obj) | (bits << st))
+
+uint32_t get_mov_reg_reg(uint8_t dst_reg_id, uint8_t src_reg_id) {
+    return 0xaa0003e0 | (dst_reg_id << 0) | (src_reg_id << 16);
+}
+
+#define submask(x) ((1L << ((x) + 1)) - 1)
+#define bits(obj, st, fn) (((obj) >> (st)) & submask((fn) - (st)))
+
+uint32_t get_bl_inst(hwaddr source, hwaddr target) {
+    uint32_t bl_inst = 0x94000000;
+    hwaddr bl_inst_diff_imm = (target - source) >> 2;
+    bl_inst |= bits(bl_inst_diff_imm, 0, 25);
+    return bl_inst;
+}
+
+uint32_t get_b_inst(hwaddr source, hwaddr target) {
+    uint32_t b_inst = 0x14000000;
+    hwaddr b_inst_diff_imm = (target - source) >> 2;
+    b_inst |= bits(b_inst_diff_imm, 0, 25);
+    return b_inst;
+}
+
+uint32_t get_adrp_inst(hwaddr source, hwaddr target, uint8_t reg_id)
 {
     //general adrp inst
     uint32_t adrp_inst = 0x90000000;
@@ -176,7 +214,7 @@ static uint32_t get_adrp_inst(hwaddr source, hwaddr target, uint8_t reg_id)
     return adrp_inst;
 }
 
-static uint32_t get_add_inst(uint8_t xd, uint8_t xn, hwaddr imm)
+uint32_t get_add_inst(uint8_t xd, uint8_t xn, hwaddr imm)
 {
     //general add inst
     uint32_t add_inst = 0x91000000;
@@ -286,7 +324,7 @@ static uint32_t get_ldp_inst(uint8_t xt1, uint8_t xt2, uint8_t rn, hwaddr imm)
     return ldp_inst;
 }
 
-static uint32_t get_br_inst(uint8_t reg_id)
+uint32_t get_br_inst(uint8_t reg_id)
 {
     //general br inst
     uint32_t br_inst = 0xD61F0000;
@@ -296,7 +334,7 @@ static uint32_t get_br_inst(uint8_t reg_id)
     return br_inst;
 }
 
-static uint32_t get_blr_inst(uint8_t reg_id)
+uint32_t get_blr_inst(uint8_t reg_id)
 {
     //general blr inst
     uint32_t blr_inst = 0xD63F0000;

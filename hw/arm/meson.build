@@ -1,5 +1,5 @@
 arm_ss = ss.source_set()
-arm_ss.add(when: 'TARGET_AARCH64', if_true: files('xnu_fb_cfg.c', 'xnu_trampoline_hook.c', 'xnu_pagetable.c', 'xnu_cpacr.c', 'xnu_dtb.c', 'xnu_file_mmio_dev.c', 'xnu_mem.c', 'xnu.c', 'j273_macos11.c', 'guest-services.c', 'guest-socket.c', 'guest-fds.c', 'guest-file.c'))
+arm_ss.add(when: 'TARGET_AARCH64', if_true: files('gollum_kern_support.cpp', 'macho/macho_ctx.cc','xnu_fb_cfg.c', 'xnu_trampoline_hook.c', 'xnu_pagetable.c', 'xnu_cpacr.c', 'xnu_dtb.c', 'xnu_file_mmio_dev.c', 'xnu_mem.c', 'xnu.c', 'j273_macos11.c', 'guest-services.c', 'guest-socket.c', 'guest-fds.c', 'guest-file.c'))
 arm_ss.add(files('boot.c'), fdt)
 arm_ss.add(when: 'CONFIG_ARM_VIRT', if_true: files('virt.c'))
 arm_ss.add(when: 'CONFIG_ACPI', if_true: files('virt-acpi-build.c'))
