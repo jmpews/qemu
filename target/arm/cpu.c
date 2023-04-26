@@ -239,8 +239,8 @@ static void arm_cpu_reset_hold(Object *obj)
         /* Userspace expects access to DC ZVA, CTL_EL0 and the cache ops */
         env->cp15.sctlr_el[1] |= SCTLR_UCT | SCTLR_UCI | SCTLR_DZE;
         /* Enable all PAC keys.  */
-        env->cp15.sctlr_el[1] |= (SCTLR_EnIA | SCTLR_EnIB |
-                                  SCTLR_EnDA | SCTLR_EnDB);
+        // env->cp15.sctlr_el[1] |= (SCTLR_EnIA | SCTLR_EnIB |
+        //                           SCTLR_EnDA | SCTLR_EnDB);
         /* Trap on btype=3 for PACIxSP. */
         env->cp15.sctlr_el[1] |= SCTLR_BT0;
         /* and to the FP/Neon instructions */
