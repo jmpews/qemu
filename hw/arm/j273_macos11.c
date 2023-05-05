@@ -256,10 +256,11 @@ static uint32_t g_set_cpacr_and_branch_inst[] = {
     //  d2800041       mov x1, #2
     //  d51cf081       mov apctl_el1, x1
     //  aa1f03e1       mov x1, xzr              # x1 = 0
-    //  14000eb5       b 0x1fc0                 # branch to regular start
+    //  140007f0       b 0x1fc0                 # branch to regular start
     0x91400c21, 0xd378dc21, 0xd5181041,
     0xd2800041, 0xd51cf081, 0xaa1f03e1,
     0x14000eb5
+    // 0x14000ee2
 };
 static uint32_t g_bzero_branch_unconditionally_inst = 0x14000039;
 static uint32_t g_qemu_call = 0xd51bff1f;
@@ -312,18 +313,6 @@ struct darwin_kernel_patch darwin_patches_20B5012d = {
     }
 };
 
-struct darwin_kernel_patch darwin_patches_20C69 = {
-    .darwin_str =
-        "Darwin Kernel Version 20.2.0: Wed Dec  2 20:40:22 PST 2020; "
-        "root:xnu-7195.60.75~1/RELEASE_ARM64_T8020",
-    .num_patches = 5, .patches = {
-        DARWIN_PATCH_A(0xfffffe0007ac4580, g_set_cpacr_and_branch_inst), // initial branch
-        DARWIN_PATCH(0xfffffe0007ab8a3c, g_bzero_branch_unconditionally_inst), // bzero conditional branch
-        DARWIN_PATCH(0xfffffe000806b438, g_w10_zero_inst), // parse_machfile slide set instruction
-        DARWIN_PATCH(0xfffffe0008cb6538, g_mov_w0_01_inst), // core trust check
-        DARWIN_PATCH(0xfffffe000806b234, g_nop_inst), // load_machfile: disable IMGPF_NOJOP
-    }
-};
 
 struct darwin_kernel_patch darwin_patches_dev_20C69 = {
     .darwin_str =
@@ -379,13 +368,35 @@ struct darwin_kernel_patch darwin_patches_kcov_dev_20F71= {
     }
 };
 
+struct darwin_kernel_patch darwin_patches_20C69 = {
+        .darwin_str =
+        "Darwin Kernel Version 20.2.0: Wed Dec  2 20:40:22 PST 2020; "
+        "root:xnu-7195.60.75~1/RELEASE_ARM64_T8020",
+        .num_patches = 5, .patches = {
+                DARWIN_PATCH_A(0xfffffe0007ac4580, g_set_cpacr_and_branch_inst), // initial branch
+                DARWIN_PATCH(0xfffffe0007ab8a3c, g_bzero_branch_unconditionally_inst), // bzero conditional branch
+                DARWIN_PATCH(0xfffffe000806b438, g_w10_zero_inst), // parse_machfile slide set instruction
+                DARWIN_PATCH(0xfffffe0008cb6538, g_mov_w0_01_inst), // core trust check
+                DARWIN_PATCH(0xfffffe000806b234, g_nop_inst), // load_machfile: disable IMGPF_NOJOP
+        }
+};
+
+struct darwin_kernel_patch darwin_patches_22E5219e= {
+        .darwin_str =
+        "Darwin Kernel Version 22.4.0: Fri Feb 10 08:10:32 PST 2023; root"
+        ":xnu-8796.100.721.505.3~4/RELEASE_ARM64_T8103",
+        .num_patches = 1, .patches = {
+                DARWIN_PATCH_A(0xFFFFFE0008390540, g_set_cpacr_and_branch_inst), // initial branch
+                // DARWIN_PATCH(0xfffffe0007abca3c, g_bzero_branch_unconditionally_inst), // bzero conditional branch
+                // DARWIN_PATCH(0xfffffe000806f438, g_w10_zero_inst), // parse_machfile slide set instruction
+                // DARWIN_PATCH(0xfffffe000806f234, g_nop_inst), // load_machfile: disable IMGPF_NOJOP
+                // DARWIN_PATCH(0xFFFFFE0008CBA538, g_mov_w0_01_inst), // core trust check
+        }
+};
+
 struct darwin_kernel_patch *darwin_patches[] = {
-    &darwin_patches_20A5364e,
-    &darwin_patches_20B5012d,
     &darwin_patches_20C69,
-    // &darwin_patches_dev_20C69,
-    // &darwin_patches_kcov_rel_20C69,
-    &darwin_patches_kcov_dev_20F71
+    &darwin_patches_22E5219e
 };
 
 static void j273_add_cpregs(J273MachineState *nms)
@@ -596,12 +607,12 @@ static void j273_ns_memory_setup(MachineState *machine, MemoryRegion *sysmem,
     uint32_t mov_x0_0x0 = 0xd2800000;
     address_space_rw(nsas, vtop_static(0xfffffe0007c0d2d4), MEMTXATTRS_UNSPECIFIED, (uint8_t *) &mov_x0_0x0, 4, 1);
 
-    uintptr_t craft_shellcode(AddressSpace *nsas, MemoryRegion *mem, uintptr_t *in_out_curr_pa, uintptr_t hook_addr, uintptr_t kernelcache_base);
+    uintptr_t craft_shellcode(AddressSpace *nsas, MemoryRegion *mem, uintptr_t *in_out_curr_pa, uintptr_t kernelcache_base);
     const uintptr_t shellcode_area = 0xfffffe0007ac5784;
     uintptr_t kernelcache_base = kernel_low;
     uintptr_t bsd_init_fn_addr = 0xfffffe0007fa92ac;
     uintptr_t kernel_bootstrap_thread_fn_addr = 0xFFFFFE0007B2FD68;
-    craft_shellcode(nsas, sysmem, &phys_ptr, kernel_bootstrap_thread_fn_addr, kernelcache_base);
+    craft_shellcode(nsas, sysmem, &phys_ptr, kernelcache_base);
 
     // {
     //     uintptr_t kernelcache_base = kernel_low;
